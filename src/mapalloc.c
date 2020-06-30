@@ -2,6 +2,8 @@
 #include <fcntl.h>
 #include <limits.h>
 #include <stdint.h>
+#include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -29,7 +31,7 @@ struct bucket {
 static struct bucket *get_bucket(void *ptr)
 {
 	uintptr_t addr = (uintptr_t)ptr;
-	return NULL;
+	return addr ? NULL : NULL;
 }
 
 void *map_calloc(size_t nelem, size_t elsize)
@@ -50,27 +52,27 @@ void *map_malloc(size_t n)
 	int prot = PROT_READ | PROT_WRITE;
 	int flags = MAP_PRIVATE;
 
-	/* round up to PAGESIZE, add 2 * PAGESIZE */
 	size_t alloc = n;
 	if (n % PAGESIZE != 0) {
-		alloc += n % PAGESIZE;
+		alloc += PAGESIZE - (n % PAGESIZE);
 	}
 	alloc += 2 * PAGESIZE;
 
 	#ifdef MAP_ANONYMOUS
 	flags = MAP_ANONYMOUS;
 	#else
-	fd = open("/dev/null", O_RDONLY);
+	fd = open("/dev/zero", O_RDONLY);
 	#endif
 
-	void *ptr = mmap(NULL, alloc, prot, flags, fd, 0);
+	/* declare as char* so simple pointer arithmetic is possible */
+	char *ptr = mmap(NULL, alloc, prot, flags, fd, 0);
 
 	if (fd != -1) {
 		close(fd);
 	}
 
 	mprotect(ptr, PAGESIZE, PROT_NONE);
-	mprotect((char*)ptr + alloc - PAGESIZE, PAGESIZE, PROT_NONE);
+	mprotect(ptr + alloc - PAGESIZE, PAGESIZE, PROT_NONE);
 
 	/*
 	struct bucket *b = get_bucket(ptr);
@@ -78,7 +80,7 @@ void *map_malloc(size_t n)
 	b->allocated = alloc;
 	*/
 
-	return ptr;
+	return ptr + PAGESIZE;
 }
 
 void *map_realloc(void *ptr, size_t n)
@@ -97,6 +99,7 @@ void map_free(void *ptr)
 
 	struct bucket *b = get_bucket(ptr);
 	if (b == NULL) {
-		/* attempting to free() an invalid pointer */
+		fprintf(stderr, "attempt to free() invalid pointer %p\n", ptr);
+		abort();
 	}
 }
