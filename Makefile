@@ -6,9 +6,10 @@ OBJDIR=obj
 SRCDIR=src
 INCDIR=include
 TESTDIR=test
-CFLAGS=-I$(INCDIR) -Wall -Wextra -Wpedantic -g
+CFLAGS=-I$(INCDIR) -Wall -Wextra -Wpedantic -g -fPIC
 
 OBJECTS=$(OBJDIR)/mapalloc.o
+WRAPOBJECTS=$(OBJECTS) $(OBJDIR)/wrap.o
 TESTS=$(BINDIR)/overflow \
 	$(BINDIR)/underflow \
 	$(BINDIR)/zero \
@@ -16,13 +17,17 @@ TESTS=$(BINDIR)/overflow \
 	$(BINDIR)/use-after-free \
 	$(BINDIR)/double-free
 
-all: $(LIBDIR)/libmapalloc.a 
+all: $(LIBDIR)/libmapalloc.a $(LIBDIR)/libwrapalloc.so
 
 #$(LIBDIR)/libmapalloc.so
 
 tests: $(TESTS)
 
 $(OBJDIR)/mapalloc.o: $(SRCDIR)/mapalloc.c $(INCDIR)/mapalloc.h
+	@mkdir -p $(@D)
+	$(CC) -c -o $@ $(CFLAGS) $(SRCDIR)/$(*F).c
+
+$(OBJDIR)/wrap.o: $(SRCDIR)/wrap.c $(INCDIR)/mapalloc.h
 	@mkdir -p $(@D)
 	$(CC) -c -o $@ $(CFLAGS) $(SRCDIR)/$(*F).c
 
@@ -33,6 +38,10 @@ $(LIBDIR)/libmapalloc.a: $(OBJECTS)
 $(LIBDIR)/libmapalloc.so: $(OBJECTS)
 	@mkdir -p $(@D)
 	$(CC) -o $@ -shared $(OBJECTS)
+
+$(LIBDIR)/libwrapalloc.so: $(WRAPOBJECTS)
+	@mkdir -p $(@D)
+	$(CC) -o $@ -shared $(WRAPOBJECTS)
 
 $(TESTS): $(LIBDIR)/libmapalloc.a
 $(BINDIR)/overflow: $(TESTDIR)/overflow.c
