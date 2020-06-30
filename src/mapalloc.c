@@ -12,6 +12,7 @@
 #include "mapalloc.h"
 
 #ifndef PAGESIZE
+#define PAGESIZE get_pagesize()
 static size_t get_pagesize(void)
 {
 	static size_t pagesize = 0;
@@ -20,9 +21,9 @@ static size_t get_pagesize(void)
 	}
 	return pagesize;
 }
-
-#define PAGESIZE get_pagesize()
 #endif
+
+#define MAPALLOC_EXIT_VALUE (127 + SIGSEGV)
 
 struct bucket {
 	size_t used;
@@ -52,9 +53,9 @@ static void *page_alloc(size_t npages)
 
 static void map_signal_action(int sig, siginfo_t *si, void *addr)
 {
-	(void)sig;
+	(void)sig; (void)addr;
 	fprintf(stderr, "error accessing %p\n", si->si_addr);
-	_exit(127 + SIGSEGV);
+	_exit(MAPALLOC_EXIT_VALUE);
 }
 
 static void set_signal_handler(void)
@@ -69,6 +70,9 @@ static void set_signal_handler(void)
 
 static struct bucket *get_bucket(void *ptr, int allocate)
 {
+	/* FIXME: assumption that one page can hold UCHAR_MAX uintptr_t */
+	/* FIXME: check return values of page_alloc() */
+
 	static uintptr_t *trie_top = NULL;
 	if (trie_top == NULL) {
 		trie_top = page_alloc(1);
@@ -117,6 +121,9 @@ void *map_malloc(size_t nbytes)
 	}
 
 	char *ptr = page_alloc(pages);
+	if (ptr == MAP_FAILED) {
+		return NULL;
+	}
 
 	mprotect(ptr, PAGESIZE, PROT_NONE);
 	mprotect(ptr + ((pages - 1) * PAGESIZE), PAGESIZE, PROT_NONE);
@@ -136,13 +143,13 @@ void *map_realloc(void *ptr, size_t n)
 
 	struct bucket *b = get_bucket(ptr, 0);
 	if (b == NULL) {
-		fprintf(stderr, "attempt to realloc() invalid pointer %p\n", ptr);
-		abort();
+		fprintf(stderr, "%s(%p, %zu): invalid pointer\n", __func__, ptr, n);
+		_exit(MAPALLOC_EXIT_VALUE);
 	}
 
 	if (n < (b->allocated - (PAGESIZE * 2))) {
 		b->used = n;
-		/* munmap() and mprotect() as necessary */
+		/* TODO: munmap() and mprotect() as necessary */
 		return ptr;
 	}
 
@@ -162,13 +169,13 @@ void map_free(void *ptr)
 
 	struct bucket *b = get_bucket(ptr, 0);
 	if (b == NULL) {
-		fprintf(stderr, "attempt to free() invalid pointer %p\n", ptr);
-		abort();
+		fprintf(stderr, "%s(%p): invalid pointer\n", __func__, ptr);
+		_exit(MAPALLOC_EXIT_VALUE);
 	}
 
 	char *base = ptr;
 	base -= PAGESIZE;
 	munmap(base, b->allocated);
 
-	/* clear bucket */
+	/* TODO: clear bucket */
 }
