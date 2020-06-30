@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 #include <fcntl.h>
 #include <limits.h>
+#include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -49,6 +50,23 @@ static void *page_alloc(size_t npages)
 	return pages;
 }
 
+static void map_signal_action(int sig, siginfo_t *si, void *addr)
+{
+	(void)sig;
+	fprintf(stderr, "error accessing %p\n", si->si_addr);
+	_exit(127 + SIGSEGV);
+}
+
+static void set_signal_handler(void)
+{
+	struct sigaction sa = {
+		.sa_flags = SA_SIGINFO,
+		.sa_sigaction = map_signal_action,
+	};
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGSEGV, &sa, NULL);
+}
+
 static struct bucket *get_bucket(void *ptr, int allocate)
 {
 	static uintptr_t *trie_top = NULL;
@@ -57,14 +75,14 @@ static struct bucket *get_bucket(void *ptr, int allocate)
 		memset(trie_top, 0, PAGESIZE);
 	}
 
-	printf("- finding bucket %p (%d)\n", ptr, allocate);
+	set_signal_handler();
+
 	uintptr_t *trie = trie_top;
 	uintptr_t addr = (uintptr_t)ptr;
 	for (size_t i = 0; i < sizeof(addr); i++) {
 		uintptr_t next = (addr >> ((sizeof(addr) - i) * CHAR_BIT))
 			& UCHAR_MAX;
 
-		printf("-- %02zx\n", next);
 		if (trie[next] == 0) {
 			if (allocate) {
 				uintptr_t *newtrie = page_alloc(1);
