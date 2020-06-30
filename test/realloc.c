@@ -13,6 +13,10 @@ int main(void)
 	printf("%p: %s\n", ptr, ptr);
 
 	ptr = map_realloc(ptr, sizeof(buf) * 2);
-	memcpy(ptr + sizeof(buf), buf, sizeof(buf));
+	memcpy(ptr + sizeof(buf) - 1, buf, sizeof(buf));
+	printf("%p: %s\n", ptr, ptr);
+
+	ptr = map_realloc(ptr, sizeof(buf) * sysconf(_SC_PAGESIZE));
+	memcpy(ptr + (2 * sizeof(buf)) - 2, buf, sizeof(buf));
 	printf("%p: %s\n", ptr, ptr);
 }
