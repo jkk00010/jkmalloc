@@ -9,9 +9,11 @@ TESTDIR=test
 CFLAGS=-I$(INCDIR) -Wall -Wextra -Wpedantic -g
 
 OBJECTS=$(OBJDIR)/mapalloc.o
-TESTS=$(BINDIR)/overflow $(BINDIR)/underflow $(BINDIR)/zero
+TESTS=$(BINDIR)/overflow $(BINDIR)/underflow $(BINDIR)/zero $(BINDIR)/realloc
 
-all: $(LIBDIR)/libmapalloc.a $(LIBDIR)/libmapalloc.so
+all: $(LIBDIR)/libmapalloc.a 
+
+#$(LIBDIR)/libmapalloc.so
 
 tests: $(TESTS)
 
@@ -27,9 +29,11 @@ $(LIBDIR)/libmapalloc.so: $(OBJECTS)
 	@mkdir -p $(@D)
 	$(CC) -o $@ -shared $(OBJECTS)
 
-$(BINDIR)/overflow: $(TESTDIR)/overflow.c $(LIBDIR)/libmapalloc.a
-$(BINDIR)/underflow: $(TESTDIR)/underflow.c $(LIBDIR)/libmapalloc.a
-$(BINDIR)/zero: $(TESTDIR)/zero.c $(LIBDIR)/libmapalloc.a
+$(TESTS): $(LIBDIR)/libmapalloc.a
+$(BINDIR)/overflow: $(TESTDIR)/overflow.c
+$(BINDIR)/underflow: $(TESTDIR)/underflow.c
+$(BINDIR)/zero: $(TESTDIR)/zero.c
+$(BINDIR)/realloc: $(TESTDIR)/realloc.c
 
 $(TESTS):
 	@mkdir -p $(@D)
