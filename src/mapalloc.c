@@ -54,19 +54,29 @@ static struct bucket *get_bucket(void *ptr, int allocate)
 	static uintptr_t *trie_top = NULL;
 	if (trie_top == NULL) {
 		trie_top = page_alloc(1);
+		memset(trie_top, 0, PAGESIZE);
 	}
 
+	printf("- finding bucket %p (%d)\n", ptr, allocate);
 	uintptr_t *trie = trie_top;
 	uintptr_t addr = (uintptr_t)ptr;
 	for (size_t i = 0; i < sizeof(addr); i++) {
-		if (trie == NULL && allocate == 0) {
-			return NULL;
-		}
+		uintptr_t next = (addr >> ((sizeof(addr) - i) * CHAR_BIT))
+			& UCHAR_MAX;
 
-		uintptr_t next = (addr >> (i * CHAR_BIT)) & UCHAR_MAX;
+		printf("-- %02zx\n", next);
+		if (trie[next] == 0) {
+			if (allocate) {
+				uintptr_t *newtrie = page_alloc(1);
+				memset(newtrie, 0, PAGESIZE);
+				trie[next] = (uintptr_t) newtrie;
+			} else {
+				return NULL;
+			}
+		}
 		trie = (uintptr_t*)trie[next];
 	}
-	return addr ? NULL : NULL;
+	return trie ? (struct bucket *)trie : NULL;
 }
 
 void *map_calloc(size_t nelem, size_t elsize)
@@ -93,11 +103,9 @@ void *map_malloc(size_t nbytes)
 	mprotect(ptr, PAGESIZE, PROT_NONE);
 	mprotect(ptr + ((pages - 1) * PAGESIZE), PAGESIZE, PROT_NONE);
 
-	/*
-	struct bucket *b = get_bucket(ptr, 1);
+	struct bucket *b = get_bucket(ptr + PAGESIZE, 1);
 	b->used = nbytes;
 	b->allocated = pages * PAGESIZE;
-	*/
 
 	return ptr + PAGESIZE;
 }
@@ -122,7 +130,7 @@ void *map_realloc(void *ptr, size_t n)
 
 	void *newptr = map_malloc(n);
 	if (newptr != NULL) {
-		memcpy(newptr, ptr, n);
+		memcpy(newptr, ptr, b->used);
 		map_free(ptr);
 	}
 	return newptr;
