@@ -70,7 +70,7 @@ void *map_malloc(size_t n)
 	}
 
 	mprotect(ptr, PAGESIZE, PROT_NONE);
-	mprotect((char*)ptr + alloc - (2 * PAGESIZE), PAGESIZE, PROT_NONE);
+	mprotect((char*)ptr + alloc - PAGESIZE, PAGESIZE, PROT_NONE);
 
 	/*
 	struct bucket *b = get_bucket(ptr);
