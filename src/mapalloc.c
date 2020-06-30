@@ -24,10 +24,14 @@ static size_t MA_pagesize(void)
 #endif
 
 #define MAPALLOC_EXIT_VALUE (127 + SIGSEGV)
+#define PAGES_PER_TRIE	(1024)
+#define TRIE_SIZE	(PAGESIZE * PAGES_PER_TRIE)
 
 struct MA_bucket {
 	size_t used;
 	size_t allocated;
+	void *under;
+	void *over;
 };
 
 static void *MA_page_alloc(size_t npages)
@@ -54,7 +58,18 @@ static void *MA_page_alloc(size_t npages)
 static void MA_sigaction(int sig, siginfo_t *si, void *addr)
 {
 	(void)sig; (void)addr;
-	fprintf(stderr, "error accessing %p\n", si->si_addr);
+
+	if (addr == NULL) {
+		fprintf(stderr, "NULL pointer dereference\n");
+	} else {
+		fprintf(stderr, "error accessing %p\n", si->si_addr);
+	}
+	_exit(MAPALLOC_EXIT_VALUE);
+}
+
+static void MA_abort(const char *func, void *ptr)
+{
+	fprintf(stderr, "%s(): invalid pointer %p\n", func, ptr);
 	_exit(MAPALLOC_EXIT_VALUE);
 }
 
@@ -70,8 +85,15 @@ static void MA_set_sigaction(void)
 
 static struct MA_bucket *MA_bucket(void *ptr, int allocate)
 {
-	/* FIXME: assumption that one page can hold UCHAR_MAX uintptr_t */
 	/* FIXME: check return values of page_alloc() */
+
+	/* FIXME: assumption that one page can hold UCHAR_MAX uintptr_t */
+	/*
+	static size_t per_trie = 0;
+	if (per_trie == 0) {
+		per_trie = TRIE_SIZE / sizeof(uintptr_t);
+	}
+	*/
 
 	static uintptr_t *trie_top = NULL;
 	if (trie_top == NULL) {
@@ -125,12 +147,14 @@ void *MA_malloc(size_t nbytes)
 		return NULL;
 	}
 
-	mprotect(ptr, PAGESIZE, PROT_NONE);
-	mprotect(ptr + ((pages - 1) * PAGESIZE), PAGESIZE, PROT_NONE);
-
 	struct MA_bucket *b = MA_bucket(ptr + PAGESIZE, 1);
 	b->used = nbytes;
 	b->allocated = pages * PAGESIZE;
+	b->under = ptr;
+	b->over = ptr + ((pages - 1) * PAGESIZE);
+
+	mprotect(b->under, PAGESIZE, PROT_NONE);
+	mprotect(b->over, PAGESIZE, PROT_NONE);
 
 	return ptr + PAGESIZE;
 }
@@ -143,8 +167,7 @@ void *MA_realloc(void *ptr, size_t n)
 
 	struct MA_bucket *b = MA_bucket(ptr, 0);
 	if (b == NULL) {
-		fprintf(stderr, "%s(%p, %zu): invalid pointer\n", __func__, ptr, n);
-		_exit(MAPALLOC_EXIT_VALUE);
+		MA_abort(__func__, ptr);
 	}
 
 	if (n < (b->allocated - (PAGESIZE * 2))) {
@@ -169,8 +192,7 @@ void MA_free(void *ptr)
 
 	struct MA_bucket *b = MA_bucket(ptr, 0);
 	if (b == NULL) {
-		fprintf(stderr, "%s(%p): invalid pointer\n", __func__, ptr);
-		_exit(MAPALLOC_EXIT_VALUE);
+		MA_abort(__func__, ptr);
 	}
 
 	char *base = ptr;
