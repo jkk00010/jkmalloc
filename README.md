@@ -1,7 +1,7 @@
 MapAlloc
 --------
 MapAlloc is a memory mapping based allocator with an API compatible with
-the C <stdlib.h> dynamic memory functions. By using memory mappings for each
+the C `<stdlib.h>` dynamic memory functions. By using memory mappings for each
 allocation, MapAlloc is able to provide guard pages to detect heap overflow
 and underflow, as well as potentially identifying use-after-free or double-free
 errors (in all cases, your program will crash, which is preferable to being
@@ -34,14 +34,14 @@ void *MA_realloc(void *ptr, size_t n);
 void MA_free(void *ptr);
 ```
 
-Or, you can ask for macros to provide the same interfaces as <stdlib.h>
-(note that if you need to also include <stdlib.h>, you should include it
-before "mapalloc.h"):
+Or, you can ask for macros to provide the same interfaces as `<stdlib.h>`
+(note that if you need to also include `<stdlib.h>`, you should include it
+before `"mapalloc.h"`):
 
 ```c
 #define MA_OVERRIDE_STDLIB
 #include "mapalloc.h"
-```c
+```
 
 This will give you access to the same set of functions as above, but also
 provide macros:
