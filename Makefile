@@ -21,7 +21,7 @@ all: $(LIBDIR)/libmapalloc.a $(LIBDIR)/libwrapalloc.so
 
 #$(LIBDIR)/libmapalloc.so
 
-tests: $(TESTS)
+tests: $(TESTS) $(BINDIR)/wrapper
 
 $(OBJDIR)/mapalloc.o: $(SRCDIR)/mapalloc.c $(INCDIR)/mapalloc.h
 	@mkdir -p $(@D)
@@ -50,6 +50,10 @@ $(BINDIR)/zero: $(TESTDIR)/zero.c
 $(BINDIR)/realloc: $(TESTDIR)/realloc.c
 $(BINDIR)/use-after-free: $(TESTDIR)/use-after-free.c
 $(BINDIR)/double-free: $(TESTDIR)/double-free.c
+
+$(BINDIR)/wrapper: $(TESTDIR)/wrapper.c
+	@mkdir -p $(@D)
+	$(CC) -o $@ $(CFLAGS) $(TESTDIR)/$(@F).c
 
 $(TESTS):
 	@mkdir -p $(@D)
