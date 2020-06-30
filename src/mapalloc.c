@@ -28,9 +28,44 @@ struct bucket {
 	size_t allocated;
 };
 
-static struct bucket *get_bucket(void *ptr)
+static void *page_alloc(size_t npages)
 {
+	int fd = -1;
+	int prot = PROT_READ | PROT_WRITE;
+	int flags = MAP_PRIVATE;
+
+	#ifdef MAP_ANONYMOUS
+	flags = MAP_ANONYMOUS;
+	#else
+	fd = open("/dev/zero", O_RDONLY);
+	#endif
+
+	void *pages = mmap(NULL, npages * PAGESIZE, prot, flags, fd, 0);
+
+	if (fd != -1) {
+		close(fd);
+	}
+
+	return pages;
+}
+
+static struct bucket *get_bucket(void *ptr, int allocate)
+{
+	static uintptr_t *trie_top = NULL;
+	if (trie_top == NULL) {
+		trie_top = page_alloc(1);
+	}
+
+	uintptr_t *trie = trie_top;
 	uintptr_t addr = (uintptr_t)ptr;
+	for (size_t i = 0; i < sizeof(addr); i++) {
+		if (trie == NULL && allocate == 0) {
+			return NULL;
+		}
+
+		uintptr_t next = (addr >> (i * CHAR_BIT)) & UCHAR_MAX;
+		trie = (uintptr_t*)trie[next];
+	}
 	return addr ? NULL : NULL;
 }
 
@@ -46,38 +81,22 @@ void *map_calloc(size_t nelem, size_t elsize)
 	return ptr;
 }
 
-void *map_malloc(size_t n)
+void *map_malloc(size_t nbytes)
 {
-	int fd = -1;
-	int prot = PROT_READ | PROT_WRITE;
-	int flags = MAP_PRIVATE;
-
-	size_t alloc = n;
-	if (n % PAGESIZE != 0) {
-		alloc += PAGESIZE - (n % PAGESIZE);
+	size_t pages = 2 + (nbytes / PAGESIZE);
+	if (nbytes % PAGESIZE != 0) {
+		pages++;
 	}
-	alloc += 2 * PAGESIZE;
 
-	#ifdef MAP_ANONYMOUS
-	flags = MAP_ANONYMOUS;
-	#else
-	fd = open("/dev/zero", O_RDONLY);
-	#endif
-
-	/* declare as char* so simple pointer arithmetic is possible */
-	char *ptr = mmap(NULL, alloc, prot, flags, fd, 0);
-
-	if (fd != -1) {
-		close(fd);
-	}
+	char *ptr = page_alloc(pages);
 
 	mprotect(ptr, PAGESIZE, PROT_NONE);
-	mprotect(ptr + alloc - PAGESIZE, PAGESIZE, PROT_NONE);
+	mprotect(ptr + ((pages - 1) * PAGESIZE), PAGESIZE, PROT_NONE);
 
 	/*
-	struct bucket *b = get_bucket(ptr);
-	b->used = n;
-	b->allocated = alloc;
+	struct bucket *b = get_bucket(ptr, 1);
+	b->used = nbytes;
+	b->allocated = pages * PAGESIZE;
 	*/
 
 	return ptr + PAGESIZE;
@@ -88,7 +107,25 @@ void *map_realloc(void *ptr, size_t n)
 	if (ptr == NULL) {
 		return map_malloc(n);
 	}
-	return NULL;
+
+	struct bucket *b = get_bucket(ptr, 0);
+	if (b == NULL) {
+		fprintf(stderr, "attempt to realloc() invalid pointer %p\n", ptr);
+		abort();
+	}
+
+	if (n < (b->allocated - (PAGESIZE * 2))) {
+		b->used = n;
+		/* munmap() and mprotect() as necessary */
+		return ptr;
+	}
+
+	void *newptr = map_malloc(n);
+	if (newptr != NULL) {
+		memcpy(newptr, ptr, n);
+		map_free(ptr);
+	}
+	return newptr;
 }
 
 void map_free(void *ptr)
@@ -97,9 +134,15 @@ void map_free(void *ptr)
 		return;
 	}
 
-	struct bucket *b = get_bucket(ptr);
+	struct bucket *b = get_bucket(ptr, 0);
 	if (b == NULL) {
 		fprintf(stderr, "attempt to free() invalid pointer %p\n", ptr);
 		abort();
 	}
+
+	char *base = ptr;
+	base -= PAGESIZE;
+	munmap(base, b->allocated);
+
+	/* clear bucket */
 }
