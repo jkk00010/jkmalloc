@@ -5,7 +5,7 @@
 
 int main(void)
 {
-	char *ptr = map_malloc(0);
+	char *ptr = MA_malloc(0);
 	long pagesize = sysconf(_SC_PAGESIZE);
 	printf("ptr: %p, pagesize %ld\n", ptr, pagesize);
 	ptr[0] = '\0';

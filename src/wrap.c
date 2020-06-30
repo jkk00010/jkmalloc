@@ -2,20 +2,20 @@
 
 void *malloc(size_t n)
 {
-	return map_malloc(n);
+	return MA_malloc(n);
 }
 
 void *calloc(size_t n, size_t e)
 {
-	return map_calloc(n, e);
+	return MA_calloc(n, e);
 }
 
 void *realloc(void *p, size_t n)
 {
-	return map_realloc(p, n);
+	return MA_realloc(p, n);
 }
 
 void free(void *p)
 {
-	map_free(p);
+	MA_free(p);
 }

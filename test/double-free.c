@@ -8,12 +8,12 @@ int main(void)
 {
 	const char buf[] = "THIS IS A CONSTANT STRING";
 
-	char *ptr = map_malloc(sizeof(buf));
+	char *ptr = MA_malloc(sizeof(buf));
 	memcpy(ptr, buf, sizeof(buf));
 	printf("%p: %s\n", ptr, ptr);
 
-	map_free(ptr);
+	MA_free(ptr);
 	printf("freed\n");
-	map_free(ptr);
+	MA_free(ptr);
 	printf("freed again\n");
 }

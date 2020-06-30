@@ -8,15 +8,15 @@ int main(void)
 {
 	const char buf[] = "THIS IS A CONSTANT STRING";
 
-	char *ptr = map_realloc(NULL, sizeof(buf));
+	char *ptr = MA_realloc(NULL, sizeof(buf));
 	memcpy(ptr, buf, sizeof(buf));
 	printf("%p: %s\n", ptr, ptr);
 
-	ptr = map_realloc(ptr, sizeof(buf) * 2);
+	ptr = MA_realloc(ptr, sizeof(buf) * 2);
 	memcpy(ptr + sizeof(buf) - 1, buf, sizeof(buf));
 	printf("%p: %s\n", ptr, ptr);
 
-	ptr = map_realloc(ptr, sizeof(buf) * sysconf(_SC_PAGESIZE));
+	ptr = MA_realloc(ptr, sizeof(buf) * sysconf(_SC_PAGESIZE));
 	memcpy(ptr + (2 * sizeof(buf)) - 2, buf, sizeof(buf));
 	printf("%p: %s\n", ptr, ptr);
 }

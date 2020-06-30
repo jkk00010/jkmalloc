@@ -12,8 +12,8 @@
 #include "mapalloc.h"
 
 #ifndef PAGESIZE
-#define PAGESIZE get_pagesize()
-static size_t get_pagesize(void)
+#define PAGESIZE MA_pagesize()
+static size_t MA_pagesize(void)
 {
 	static size_t pagesize = 0;
 	if (pagesize == 0) {
@@ -25,12 +25,12 @@ static size_t get_pagesize(void)
 
 #define MAPALLOC_EXIT_VALUE (127 + SIGSEGV)
 
-struct bucket {
+struct MA_bucket {
 	size_t used;
 	size_t allocated;
 };
 
-static void *page_alloc(size_t npages)
+static void *MA_page_alloc(size_t npages)
 {
 	int fd = -1;
 	int prot = PROT_READ | PROT_WRITE;
@@ -51,35 +51,35 @@ static void *page_alloc(size_t npages)
 	return pages;
 }
 
-static void map_signal_action(int sig, siginfo_t *si, void *addr)
+static void MA_sigaction(int sig, siginfo_t *si, void *addr)
 {
 	(void)sig; (void)addr;
 	fprintf(stderr, "error accessing %p\n", si->si_addr);
 	_exit(MAPALLOC_EXIT_VALUE);
 }
 
-static void set_signal_handler(void)
+static void MA_set_sigaction(void)
 {
 	struct sigaction sa = {
 		.sa_flags = SA_SIGINFO,
-		.sa_sigaction = map_signal_action,
+		.sa_sigaction = MA_sigaction,
 	};
 	sigemptyset(&sa.sa_mask);
 	sigaction(SIGSEGV, &sa, NULL);
 }
 
-static struct bucket *get_bucket(void *ptr, int allocate)
+static struct MA_bucket *MA_bucket(void *ptr, int allocate)
 {
 	/* FIXME: assumption that one page can hold UCHAR_MAX uintptr_t */
 	/* FIXME: check return values of page_alloc() */
 
 	static uintptr_t *trie_top = NULL;
 	if (trie_top == NULL) {
-		trie_top = page_alloc(1);
+		trie_top = MA_page_alloc(1);
 		memset(trie_top, 0, PAGESIZE);
 	}
 
-	set_signal_handler();
+	MA_set_sigaction();
 
 	uintptr_t *trie = trie_top;
 	uintptr_t addr = (uintptr_t)ptr;
@@ -89,7 +89,7 @@ static struct bucket *get_bucket(void *ptr, int allocate)
 
 		if (trie[next] == 0) {
 			if (allocate) {
-				uintptr_t *newtrie = page_alloc(1);
+				uintptr_t *newtrie = MA_page_alloc(1);
 				memset(newtrie, 0, PAGESIZE);
 				trie[next] = (uintptr_t) newtrie;
 			} else {
@@ -98,29 +98,29 @@ static struct bucket *get_bucket(void *ptr, int allocate)
 		}
 		trie = (uintptr_t*)trie[next];
 	}
-	return trie ? (struct bucket *)trie : NULL;
+	return trie ? (struct MA_bucket *)trie : NULL;
 }
 
-void *map_calloc(size_t nelem, size_t elsize)
+void *MA_calloc(size_t nelem, size_t elsize)
 {
 	size_t n = nelem * elsize;
 	if (n < nelem || n < elsize) {
 		/* overflow */
 		return NULL;
 	}
-	void *ptr = map_malloc(n);
+	void *ptr = MA_malloc(n);
 	memset(ptr, 0, n);
 	return ptr;
 }
 
-void *map_malloc(size_t nbytes)
+void *MA_malloc(size_t nbytes)
 {
 	size_t pages = 2 + (nbytes / PAGESIZE);
 	if (nbytes % PAGESIZE != 0) {
 		pages++;
 	}
 
-	char *ptr = page_alloc(pages);
+	char *ptr = MA_page_alloc(pages);
 	if (ptr == MAP_FAILED) {
 		return NULL;
 	}
@@ -128,20 +128,20 @@ void *map_malloc(size_t nbytes)
 	mprotect(ptr, PAGESIZE, PROT_NONE);
 	mprotect(ptr + ((pages - 1) * PAGESIZE), PAGESIZE, PROT_NONE);
 
-	struct bucket *b = get_bucket(ptr + PAGESIZE, 1);
+	struct MA_bucket *b = MA_bucket(ptr + PAGESIZE, 1);
 	b->used = nbytes;
 	b->allocated = pages * PAGESIZE;
 
 	return ptr + PAGESIZE;
 }
 
-void *map_realloc(void *ptr, size_t n)
+void *MA_realloc(void *ptr, size_t n)
 {
 	if (ptr == NULL) {
-		return map_malloc(n);
+		return MA_malloc(n);
 	}
 
-	struct bucket *b = get_bucket(ptr, 0);
+	struct MA_bucket *b = MA_bucket(ptr, 0);
 	if (b == NULL) {
 		fprintf(stderr, "%s(%p, %zu): invalid pointer\n", __func__, ptr, n);
 		_exit(MAPALLOC_EXIT_VALUE);
@@ -153,21 +153,21 @@ void *map_realloc(void *ptr, size_t n)
 		return ptr;
 	}
 
-	void *newptr = map_malloc(n);
+	void *newptr = MA_malloc(n);
 	if (newptr != NULL) {
 		memcpy(newptr, ptr, b->used);
-		map_free(ptr);
+		MA_free(ptr);
 	}
 	return newptr;
 }
 
-void map_free(void *ptr)
+void MA_free(void *ptr)
 {
 	if (ptr == NULL) {
 		return;
 	}
 
-	struct bucket *b = get_bucket(ptr, 0);
+	struct MA_bucket *b = MA_bucket(ptr, 0);
 	if (b == NULL) {
 		fprintf(stderr, "%s(%p): invalid pointer\n", __func__, ptr);
 		_exit(MAPALLOC_EXIT_VALUE);
