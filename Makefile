@@ -15,7 +15,8 @@ TESTS=$(BINDIR)/overflow \
 	$(BINDIR)/zero \
 	$(BINDIR)/realloc \
 	$(BINDIR)/use-after-free \
-	$(BINDIR)/double-free
+	$(BINDIR)/double-free \
+	$(BINDIR)/macros
 
 all: $(LIBDIR)/libmapalloc.a $(LIBDIR)/libwrapalloc.so
 
@@ -50,6 +51,7 @@ $(BINDIR)/zero: $(TESTDIR)/zero.c
 $(BINDIR)/realloc: $(TESTDIR)/realloc.c
 $(BINDIR)/use-after-free: $(TESTDIR)/use-after-free.c
 $(BINDIR)/double-free: $(TESTDIR)/double-free.c
+$(BINDIR)/macros: $(TESTDIR)/macros.c
 
 $(BINDIR)/wrapper: $(TESTDIR)/wrapper.c
 	@mkdir -p $(@D)
