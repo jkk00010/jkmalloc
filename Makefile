@@ -16,13 +16,15 @@ TESTS=$(BINDIR)/overflow \
 	$(BINDIR)/realloc \
 	$(BINDIR)/use-after-free \
 	$(BINDIR)/double-free \
-	$(BINDIR)/macros
+	$(BINDIR)/macros \
+	$(BINDIR)/invalid-free \
+	$(BINDIR)/invalid-realloc
 
 all: $(LIBDIR)/libmapalloc.a $(LIBDIR)/libwrapalloc.so
 
 #$(LIBDIR)/libmapalloc.so
 
-tests: $(TESTS) $(BINDIR)/wrapper
+tests: all $(TESTS) $(BINDIR)/wrapper
 
 $(OBJDIR)/mapalloc.o: $(SRCDIR)/mapalloc.c $(INCDIR)/mapalloc.h
 	@mkdir -p $(@D)
@@ -52,6 +54,8 @@ $(BINDIR)/realloc: $(TESTDIR)/realloc.c
 $(BINDIR)/use-after-free: $(TESTDIR)/use-after-free.c
 $(BINDIR)/double-free: $(TESTDIR)/double-free.c
 $(BINDIR)/macros: $(TESTDIR)/macros.c
+$(BINDIR)/invalid-free: $(TESTDIR)/invalid-free.c
+$(BINDIR)/invalid-realloc: $(TESTDIR)/invalid-realloc.c
 
 $(BINDIR)/wrapper: $(TESTDIR)/wrapper.c
 	@mkdir -p $(@D)
