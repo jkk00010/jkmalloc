@@ -172,7 +172,12 @@ void *MA_realloc(void *ptr, size_t n)
 
 	if (n < (b->allocated - (PAGESIZE * 2))) {
 		b->used = n;
-		/* TODO: munmap() and mprotect() as necessary */
+		char *over = (char*)ptr + b->used + (PAGESIZE - (PAGESIZE % b->used));
+		if (over != b->over) {
+			mprotect(over, PAGESIZE, PROT_NONE);
+			munmap(over + PAGESIZE, (char*)b->over - over - PAGESIZE);
+			b->over = over;
+		}
 		return ptr;
 	}
 
