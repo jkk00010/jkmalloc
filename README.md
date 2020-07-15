@@ -56,3 +56,14 @@ provide macros:
 Link your program with `-lmapalloc` (you may also need to specify
 `-L` with the path to where `libmapalloc.a` is if you don't copy it to part
 of your linker's default search path).
+
+Wrapper
+-------
+The dynamic library `libwrapalloc.so` is also built by default. This can
+be used to wrap the standard libc functions `malloc()`, `calloc()`, `realloc()`,
+and `free()` to their MapAlloc equivalents if your dynamic linker supports
+this. For example, on Linux systems with the GNU linker:
+
+```bash
+LD_PRELOAD=libwrapalloc.so command args...
+```
