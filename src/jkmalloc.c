@@ -28,11 +28,14 @@ static size_t jk_pagesize(void)
 #define TRIE_SIZE	(PAGESIZE * PAGES_PER_TRIE)
 
 struct jk_bucket {
+	enum { FREE, ALLOCATED, OVER, UNDER, ZERO } state;
 	size_t used;
 	size_t allocated;
 	void *under;
 	void *over;
 };
+
+static void jk_set_sigaction(void);
 
 static void *jk_page_alloc(size_t npages)
 {
@@ -55,34 +58,6 @@ static void *jk_page_alloc(size_t npages)
 	return pages;
 }
 
-static void jk_sigaction(int sig, siginfo_t *si, void *addr)
-{
-	(void)sig; (void)addr;
-
-	if (addr == NULL) {
-		fprintf(stderr, "NULL pointer dereference\n");
-	} else {
-		fprintf(stderr, "error accessing %p\n", si->si_addr);
-	}
-	_exit(JKMALLOC_EXIT_VALUE);
-}
-
-static void jk_abort(const char *func, void *ptr)
-{
-	fprintf(stderr, "%s(): invalid pointer %p\n", func, ptr);
-	_exit(JKMALLOC_EXIT_VALUE);
-}
-
-static void jk_set_sigaction(void)
-{
-	struct sigaction sa = {
-		.sa_flags = SA_SIGINFO,
-		.sa_sigaction = jk_sigaction,
-	};
-	sigemptyset(&sa.sa_mask);
-	sigaction(SIGSEGV, &sa, NULL);
-}
-
 static struct jk_bucket *jk_bucket(void *ptr, int allocate)
 {
 	/* FIXME: check return values of page_alloc() */
@@ -99,9 +74,8 @@ static struct jk_bucket *jk_bucket(void *ptr, int allocate)
 	if (trie_top == NULL) {
 		trie_top = jk_page_alloc(1);
 		memset(trie_top, 0, PAGESIZE);
+		jk_set_sigaction();
 	}
-
-	jk_set_sigaction();
 
 	uintptr_t *trie = trie_top;
 	uintptr_t addr = (uintptr_t)ptr;
@@ -121,6 +95,60 @@ static struct jk_bucket *jk_bucket(void *ptr, int allocate)
 		trie = (uintptr_t*)trie[next];
 	}
 	return trie ? (struct jk_bucket *)trie : NULL;
+}
+
+static void jk_sigaction(int sig, siginfo_t *si, void *addr)
+{
+	(void)sig; (void)addr;
+	struct jk_bucket *bucket = jk_bucket(si->si_addr, 0);
+
+	if (!bucket) {
+		psiginfo(si, NULL);
+		if (si->si_addr == NULL) {
+			fprintf(stderr, "NULL pointer dereference\n");
+		}
+	} else {
+		psiginfo(si, "Heap Error");
+		switch (bucket->state) {
+		case FREE:
+			fprintf(stderr, "Use after free detected\n");
+			break;
+		case UNDER:
+			fprintf(stderr, "Heap underflow detected\n");
+			break;
+		case OVER:
+			fprintf(stderr, "Heap overflow detected\n");
+			break;
+		case ZERO:
+			fprintf(stderr, "Attempt to use 0-byte allocation\n");
+			break;
+		default:
+			break;
+		}
+		/*
+		fprintf(stderr, "used: %zd\n", bucket->used);
+		fprintf(stderr, "allocated: %zd\n", bucket->allocated);
+		fprintf(stderr, "over: %p\n", bucket->over);
+		fprintf(stderr, "under: %p\n", bucket->under);
+		*/
+	}
+	_exit(JKMALLOC_EXIT_VALUE);
+}
+
+static void jk_abort(const char *func, void *ptr)
+{
+	fprintf(stderr, "%s(): invalid pointer %p\n", func, ptr);
+	_exit(JKMALLOC_EXIT_VALUE);
+}
+
+static void jk_set_sigaction(void)
+{
+	struct sigaction sa = {
+		.sa_flags = SA_SIGINFO,
+		.sa_sigaction = jk_sigaction,
+	};
+	sigemptyset(&sa.sa_mask);
+	sigaction(SIGSEGV, &sa, NULL);
 }
 
 void *jk_calloc(size_t nelem, size_t elsize)
@@ -152,6 +180,10 @@ void *jk_malloc(size_t nbytes)
 	b->allocated = pages * PAGESIZE;
 	b->under = ptr;
 	b->over = ptr + ((pages - 1) * PAGESIZE);
+	b->state = ALLOCATED;
+	if (nbytes == 0) {
+		b->state = ZERO;
+	}
 
 	mprotect(b->under, PAGESIZE, PROT_NONE);
 	mprotect(b->over, PAGESIZE, PROT_NONE);
@@ -200,9 +232,19 @@ void jk_free(void *ptr)
 		jk_abort(__func__, ptr);
 	}
 
+	if (b->state == FREE) {
+		fprintf(stderr, "Attempt to double free(%p)\n", ptr);
+		_exit(JKMALLOC_EXIT_VALUE);
+	}
+
+	if (b->state != ALLOCATED) {
+		fprintf(stderr, "Attempt to free(%p) unallocated memory\n", ptr);
+		_exit(JKMALLOC_EXIT_VALUE);
+	}
+
 	char *base = ptr;
 	base -= PAGESIZE;
 	munmap(base, b->allocated);
+	b->state = FREE;
 
-	/* TODO: clear bucket */
 }
