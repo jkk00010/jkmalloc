@@ -2,11 +2,11 @@
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include "mapalloc.h"
+#include "jkmalloc.h"
 
 int main(void)
 {
 	int foo = 42;
-	MA_free(&foo);
+	jk_free(&foo);
 	printf("freed\n");
 }

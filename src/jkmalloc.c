@@ -9,11 +9,11 @@
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "mapalloc.h"
+#include "jkmalloc.h"
 
 #ifndef PAGESIZE
-#define PAGESIZE MA_pagesize()
-static size_t MA_pagesize(void)
+#define PAGESIZE jk_pagesize()
+static size_t jk_pagesize(void)
 {
 	static size_t pagesize = 0;
 	if (pagesize == 0) {
@@ -23,18 +23,18 @@ static size_t MA_pagesize(void)
 }
 #endif
 
-#define MAPALLOC_EXIT_VALUE (127 + SIGSEGV)
+#define JKMALLOC_EXIT_VALUE (127 + SIGSEGV)
 #define PAGES_PER_TRIE	(1024)
 #define TRIE_SIZE	(PAGESIZE * PAGES_PER_TRIE)
 
-struct MA_bucket {
+struct jk_bucket {
 	size_t used;
 	size_t allocated;
 	void *under;
 	void *over;
 };
 
-static void *MA_page_alloc(size_t npages)
+static void *jk_page_alloc(size_t npages)
 {
 	int fd = -1;
 	int prot = PROT_READ | PROT_WRITE;
@@ -55,7 +55,7 @@ static void *MA_page_alloc(size_t npages)
 	return pages;
 }
 
-static void MA_sigaction(int sig, siginfo_t *si, void *addr)
+static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 {
 	(void)sig; (void)addr;
 
@@ -64,26 +64,26 @@ static void MA_sigaction(int sig, siginfo_t *si, void *addr)
 	} else {
 		fprintf(stderr, "error accessing %p\n", si->si_addr);
 	}
-	_exit(MAPALLOC_EXIT_VALUE);
+	_exit(JKMALLOC_EXIT_VALUE);
 }
 
-static void MA_abort(const char *func, void *ptr)
+static void jk_abort(const char *func, void *ptr)
 {
 	fprintf(stderr, "%s(): invalid pointer %p\n", func, ptr);
-	_exit(MAPALLOC_EXIT_VALUE);
+	_exit(JKMALLOC_EXIT_VALUE);
 }
 
-static void MA_set_sigaction(void)
+static void jk_set_sigaction(void)
 {
 	struct sigaction sa = {
 		.sa_flags = SA_SIGINFO,
-		.sa_sigaction = MA_sigaction,
+		.sa_sigaction = jk_sigaction,
 	};
 	sigemptyset(&sa.sa_mask);
 	sigaction(SIGSEGV, &sa, NULL);
 }
 
-static struct MA_bucket *MA_bucket(void *ptr, int allocate)
+static struct jk_bucket *jk_bucket(void *ptr, int allocate)
 {
 	/* FIXME: check return values of page_alloc() */
 
@@ -97,11 +97,11 @@ static struct MA_bucket *MA_bucket(void *ptr, int allocate)
 
 	static uintptr_t *trie_top = NULL;
 	if (trie_top == NULL) {
-		trie_top = MA_page_alloc(1);
+		trie_top = jk_page_alloc(1);
 		memset(trie_top, 0, PAGESIZE);
 	}
 
-	MA_set_sigaction();
+	jk_set_sigaction();
 
 	uintptr_t *trie = trie_top;
 	uintptr_t addr = (uintptr_t)ptr;
@@ -111,7 +111,7 @@ static struct MA_bucket *MA_bucket(void *ptr, int allocate)
 
 		if (trie[next] == 0) {
 			if (allocate) {
-				uintptr_t *newtrie = MA_page_alloc(1);
+				uintptr_t *newtrie = jk_page_alloc(1);
 				memset(newtrie, 0, PAGESIZE);
 				trie[next] = (uintptr_t) newtrie;
 			} else {
@@ -120,34 +120,34 @@ static struct MA_bucket *MA_bucket(void *ptr, int allocate)
 		}
 		trie = (uintptr_t*)trie[next];
 	}
-	return trie ? (struct MA_bucket *)trie : NULL;
+	return trie ? (struct jk_bucket *)trie : NULL;
 }
 
-void *MA_calloc(size_t nelem, size_t elsize)
+void *jk_calloc(size_t nelem, size_t elsize)
 {
 	size_t n = nelem * elsize;
 	if (n < nelem || n < elsize) {
 		/* overflow */
 		return NULL;
 	}
-	void *ptr = MA_malloc(n);
+	void *ptr = jk_malloc(n);
 	memset(ptr, 0, n);
 	return ptr;
 }
 
-void *MA_malloc(size_t nbytes)
+void *jk_malloc(size_t nbytes)
 {
 	size_t pages = 2 + (nbytes / PAGESIZE);
 	if (nbytes % PAGESIZE != 0) {
 		pages++;
 	}
 
-	char *ptr = MA_page_alloc(pages);
+	char *ptr = jk_page_alloc(pages);
 	if (ptr == MAP_FAILED) {
 		return NULL;
 	}
 
-	struct MA_bucket *b = MA_bucket(ptr + PAGESIZE, 1);
+	struct jk_bucket *b = jk_bucket(ptr + PAGESIZE, 1);
 	b->used = nbytes;
 	b->allocated = pages * PAGESIZE;
 	b->under = ptr;
@@ -159,15 +159,15 @@ void *MA_malloc(size_t nbytes)
 	return ptr + PAGESIZE;
 }
 
-void *MA_realloc(void *ptr, size_t n)
+void *jk_realloc(void *ptr, size_t n)
 {
 	if (ptr == NULL) {
-		return MA_malloc(n);
+		return jk_malloc(n);
 	}
 
-	struct MA_bucket *b = MA_bucket(ptr, 0);
+	struct jk_bucket *b = jk_bucket(ptr, 0);
 	if (b == NULL) {
-		MA_abort(__func__, ptr);
+		jk_abort(__func__, ptr);
 	}
 
 	if (n < (b->allocated - (PAGESIZE * 2))) {
@@ -181,23 +181,23 @@ void *MA_realloc(void *ptr, size_t n)
 		return ptr;
 	}
 
-	void *newptr = MA_malloc(n);
+	void *newptr = jk_malloc(n);
 	if (newptr != NULL) {
 		memcpy(newptr, ptr, b->used);
-		MA_free(ptr);
+		jk_free(ptr);
 	}
 	return newptr;
 }
 
-void MA_free(void *ptr)
+void jk_free(void *ptr)
 {
 	if (ptr == NULL) {
 		return;
 	}
 
-	struct MA_bucket *b = MA_bucket(ptr, 0);
+	struct jk_bucket *b = jk_bucket(ptr, 0);
 	if (b == NULL) {
-		MA_abort(__func__, ptr);
+		jk_abort(__func__, ptr);
 	}
 
 	char *base = ptr;

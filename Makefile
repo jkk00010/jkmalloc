@@ -8,7 +8,7 @@ INCDIR=include
 TESTDIR=test
 CFLAGS=-I$(INCDIR) -Wall -Wextra -Wpedantic -g -fPIC
 
-OBJECTS=$(OBJDIR)/mapalloc.o
+OBJECTS=$(OBJDIR)/jkmalloc.o
 WRAPOBJECTS=$(OBJECTS) $(OBJDIR)/wrap.o
 TESTS=$(BINDIR)/overflow \
 	$(BINDIR)/underflow \
@@ -20,33 +20,29 @@ TESTS=$(BINDIR)/overflow \
 	$(BINDIR)/invalid-free \
 	$(BINDIR)/invalid-realloc
 
-all: $(LIBDIR)/libmapalloc.a $(LIBDIR)/libwrapalloc.so
+all: $(LIBDIR)/libjkmalloc.a $(LIBDIR)/libjkmalloc.so
 
-#$(LIBDIR)/libmapalloc.so
+#$(LIBDIR)/libjkmalloc.so
 
 tests: all $(TESTS) $(BINDIR)/wrapper
 
-$(OBJDIR)/mapalloc.o: $(SRCDIR)/mapalloc.c $(INCDIR)/mapalloc.h
+$(OBJDIR)/jkmalloc.o: $(SRCDIR)/jkmalloc.c $(INCDIR)/jkmalloc.h
 	@mkdir -p $(@D)
 	$(CC) -c -o $@ $(CFLAGS) $(SRCDIR)/$(*F).c
 
-$(OBJDIR)/wrap.o: $(SRCDIR)/wrap.c $(INCDIR)/mapalloc.h
+$(OBJDIR)/wrap.o: $(SRCDIR)/wrap.c $(INCDIR)/jkmalloc.h
 	@mkdir -p $(@D)
 	$(CC) -c -o $@ $(CFLAGS) $(SRCDIR)/$(*F).c
 
-$(LIBDIR)/libmapalloc.a: $(OBJECTS)
+$(LIBDIR)/libjkmalloc.a: $(OBJECTS)
 	@mkdir -p $(@D)
 	$(AR) $(ARFLAGS) $@ $<
 
-$(LIBDIR)/libmapalloc.so: $(OBJECTS)
-	@mkdir -p $(@D)
-	$(CC) -o $@ -shared $(OBJECTS)
-
-$(LIBDIR)/libwrapalloc.so: $(WRAPOBJECTS)
+$(LIBDIR)/libjkmalloc.so: $(WRAPOBJECTS)
 	@mkdir -p $(@D)
 	$(CC) -o $@ -shared $(WRAPOBJECTS)
 
-$(TESTS): $(LIBDIR)/libmapalloc.a
+$(TESTS): $(LIBDIR)/libjkmalloc.a
 $(BINDIR)/overflow: $(TESTDIR)/overflow.c
 $(BINDIR)/underflow: $(TESTDIR)/underflow.c
 $(BINDIR)/zero: $(TESTDIR)/zero.c
@@ -63,7 +59,7 @@ $(BINDIR)/wrapper: $(TESTDIR)/wrapper.c
 
 $(TESTS):
 	@mkdir -p $(@D)
-	$(CC) -o $@ $(CFLAGS) $(TESTDIR)/$(@F).c -L$(LIBDIR) -lmapalloc
+	$(CC) -o $@ $(CFLAGS) $(TESTDIR)/$(@F).c -L$(LIBDIR) -ljkmalloc
 
 clean:
 	$(RM) -rf $(LIBDIR) $(OBJDIR) $(BINDIR)

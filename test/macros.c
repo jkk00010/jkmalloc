@@ -4,8 +4,8 @@
 #include <string.h>
 #include <unistd.h>
 
-#define MA_OVERRIDE_STDLIB
-#include "mapalloc.h"
+#define JK_OVERRIDE_STDLIB
+#include "jkmalloc.h"
 
 int main(void)
 {
