@@ -5,9 +5,9 @@
 
 int main(void)
 {
-	char *ptr = malloc(1);
+	char *ptr = malloc(0);
 	long pagesize = sysconf(_SC_PAGESIZE);
 	printf("ptr: %p, pagesize %ld\n", ptr, pagesize);
-	ptr[-1] = '\0';
+	ptr[0] = '\0';
 	printf("shouldn't get here\n");
 }
