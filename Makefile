@@ -19,7 +19,8 @@ TESTS=$(BINDIR)/overflow \
 	$(BINDIR)/double-free \
 	$(BINDIR)/invalid-free \
 	$(BINDIR)/invalid-realloc \
-	$(BINDIR)/wrapper
+	$(BINDIR)/wrapper \
+	$(BINDIR)/null
 JKTESTS=$(BINDIR)/jk-overflow \
 	$(BINDIR)/jk-underflow \
 	$(BINDIR)/jk-zero-alloc \
@@ -28,7 +29,8 @@ JKTESTS=$(BINDIR)/jk-overflow \
 	$(BINDIR)/jk-double-free \
 	$(BINDIR)/jk-macros \
 	$(BINDIR)/jk-invalid-free \
-	$(BINDIR)/jk-invalid-realloc
+	$(BINDIR)/jk-invalid-realloc \
+	$(BINDIR)/jk-null
 
 tests: all $(TESTS) $(JKTESTS)
 
@@ -60,16 +62,18 @@ $(BINDIR)/double-free: $(TESTDIR)/double-free.c
 $(BINDIR)/invalid-free: $(TESTDIR)/invalid-free.c
 $(BINDIR)/invalid-realloc: $(TESTDIR)/invalid-realloc.c
 $(BINDIR)/wrapper: $(TESTDIR)/wrapper.c
+$(BINDIR)/null: $(TESTDIR)/null.c
 
-$(BINDIR)/jk-overflow: $(TESTDIR)/jk-overflow.c
-$(BINDIR)/jk-underflow: $(TESTDIR)/jk-underflow.c
-$(BINDIR)/jk-zero: $(TESTDIR)/jk-zero.c
-$(BINDIR)/jk-realloc: $(TESTDIR)/jk-realloc.c
-$(BINDIR)/jk-use-after-free: $(TESTDIR)/jk-use-after-free.c
-$(BINDIR)/jk-double-free: $(TESTDIR)/jk-double-free.c
-$(BINDIR)/jk-macros: $(TESTDIR)/jk-macros.c
-$(BINDIR)/jk-invalid-free: $(TESTDIR)/jk-invalid-free.c
-$(BINDIR)/jk-invalid-realloc: $(TESTDIR)/jk-invalid-realloc.c
+$(BINDIR)/jk-overflow: $(TESTDIR)/overflow.c $(TESTDIR)/jk-overflow.c $(LIBDIR)/libjkmalloc.a
+$(BINDIR)/jk-underflow: $(TESTDIR)/underflow.c $(TESTDIR)/jk-underflow.c $(LIBDIR)/libjkmalloc.a
+$(BINDIR)/jk-zero: $(TESTDIR)/zero.c $(TESTDIR)/jk-zero.c $(LIBDIR)/libjkmalloc.a
+$(BINDIR)/jk-realloc: $(TESTDIR)/realloc.c $(TESTDIR)/jk-realloc.c $(LIBDIR)/libjkmalloc.a
+$(BINDIR)/jk-use-after-free: $(TESTDIR)/use-after-free.c $(TESTDIR)/jk-use-after-free.c $(LIBDIR)/libjkmalloc.a
+$(BINDIR)/jk-double-free: $(TESTDIR)/double-free.c $(TESTDIR)/jk-double-free.c $(LIBDIR)/libjkmalloc.a
+$(BINDIR)/jk-macros: $(TESTDIR)/jk-macros.c $(LIBDIR)/libjkmalloc.a
+$(BINDIR)/jk-invalid-free: $(TESTDIR)/invalid-free.c $(TESTDIR)/jk-invalid-free.c $(LIBDIR)/libjkmalloc.a
+$(BINDIR)/jk-invalid-realloc: $(TESTDIR)/invalid-realloc.c $(TESTDIR)/jk-invalid-realloc.c $(LIBDIR)/libjkmalloc.a
+$(BINDIR)/jk-null: $(TESTDIR)/null.c $(TESTDIR)/jk-null.c $(LIBDIR)/libjkmalloc.a
 
 $(TESTS):
 	@mkdir -p $(@D)
