@@ -10,16 +10,16 @@ void jk_free(void *ptr);
 
 #ifdef JK_OVERRIDE_STDLIB
 #undef malloc
-#define malloc(n)	jk_malloc(n)
+#define malloc(jk_n)		jk_malloc(jk_n)
 
 #undef calloc
-#define calloc(n, e)	jk_calloc(n, e)
+#define calloc(jk_n, jk_e)	jk_calloc(jk_n, jk_e)
 
 #undef realloc
-#define realloc(p, n)	jk_realloc(p, n)
+#define realloc(jk_p, jk_n)	jk_realloc(jk_p, jk_n)
 
 #undef free
-#define free(p)		jk_free(p)
+#define free(jk_p)		jk_free(jk_p)
 #endif
 
 #endif
