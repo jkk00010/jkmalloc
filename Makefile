@@ -29,9 +29,9 @@ JKTESTS=$(BINDIR)/jk-overflow \
 	$(BINDIR)/jk-invalid-free \
 	$(BINDIR)/jk-invalid-realloc
 
-all: $(LIBDIR)/libjkmalloc.a $(LIBDIR)/libjkmalloc.so
-
 tests: all $(TESTS) $(JKTESTS)
+
+all: $(LIBDIR)/libjkmalloc.a $(LIBDIR)/libjkmalloc.so
 
 $(OBJDIR)/jkmalloc.o: $(SRCDIR)/jkmalloc.c $(INCDIR)/jkmalloc.h
 	@mkdir -p $(@D)
@@ -56,10 +56,19 @@ $(BINDIR)/zero: $(TESTDIR)/zero.c
 $(BINDIR)/realloc: $(TESTDIR)/realloc.c
 $(BINDIR)/use-after-free: $(TESTDIR)/use-after-free.c
 $(BINDIR)/double-free: $(TESTDIR)/double-free.c
-$(BINDIR)/macros: $(TESTDIR)/macros.c
 $(BINDIR)/invalid-free: $(TESTDIR)/invalid-free.c
 $(BINDIR)/invalid-realloc: $(TESTDIR)/invalid-realloc.c
 $(BINDIR)/wrapper: $(TESTDIR)/wrapper.c
+
+$(BINDIR)/jk-overflow: $(TESTDIR)/jk-overflow.c
+$(BINDIR)/jk-underflow: $(TESTDIR)/jk-underflow.c
+$(BINDIR)/jk-zero: $(TESTDIR)/jk-zero.c
+$(BINDIR)/jk-realloc: $(TESTDIR)/jk-realloc.c
+$(BINDIR)/jk-use-after-free: $(TESTDIR)/jk-use-after-free.c
+$(BINDIR)/jk-double-free: $(TESTDIR)/jk-double-free.c
+$(BINDIR)/jk-macros: $(TESTDIR)/jk-macros.c
+$(BINDIR)/jk-invalid-free: $(TESTDIR)/jk-invalid-free.c
+$(BINDIR)/jk-invalid-realloc: $(TESTDIR)/jk-invalid-realloc.c
 
 $(TESTS):
 	@mkdir -p $(@D)
@@ -67,7 +76,7 @@ $(TESTS):
 
 $(JKTESTS):
 	@mkdir -p $(@D)
-	$(CC) -o $@ $(CFLAGS) $(TESTDIR)/$(@F).c -L$(LIBDIR) -ljkmalloc
+	$(CC) -o $@ $(CFLAGS) $(TESTDIR)/$(@F).c $(LIBDIR)/libjkmalloc.a
 
 clean:
 	$(RM) -rf $(LIBDIR) $(OBJDIR) $(BINDIR)
