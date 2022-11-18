@@ -41,7 +41,7 @@ static void *jk_page_alloc(size_t npages)
 	int flags = MAP_PRIVATE;
 
 	#ifdef MAP_ANONYMOUS
-	flags = MAP_ANONYMOUS;
+	flags |= MAP_ANONYMOUS;
 	#else
 	fd = open("/dev/zero", O_RDONLY);
 	#endif
