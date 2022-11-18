@@ -14,5 +14,6 @@ int main(void)
 
 	free(ptr);
 	printf("freed\n");
-	printf("%p: %s\n", ptr, ptr);
+
+	printf("should not be reached: %p: %s\n", ptr, ptr);
 }

@@ -9,5 +9,5 @@ int main(void)
 	long pagesize = sysconf(_SC_PAGESIZE);
 	printf("ptr: %p, pagesize %ld\n", ptr, pagesize);
 	ptr[pagesize] = '\0';
-	printf("shouldn't get here\n");
+	printf("should not be reached: %p\n", ptr);
 }

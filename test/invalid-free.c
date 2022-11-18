@@ -8,5 +8,5 @@ int main(void)
 {
 	int foo = 42;
 	free(&foo);
-	printf("freed\n");
+	printf("should not be reached: freed\n");
 }

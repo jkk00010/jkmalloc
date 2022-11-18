@@ -8,5 +8,5 @@ int main(void)
 {
 	int foo = 42;
 	int *ptr = realloc(&foo, sizeof(int));
-	printf("%d\n", *ptr);
+	printf("should not be reached: %d\n", *ptr);
 }
