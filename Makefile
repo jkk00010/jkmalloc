@@ -6,6 +6,7 @@ OBJDIR=obj
 SRCDIR=src
 INCDIR=include
 TESTDIR=test
+CC=c99
 CFLAGS=-I$(INCDIR) -Wall -Wextra -Wpedantic -g -fPIC
 
 OBJECTS=$(OBJDIR)/jkmalloc.o
