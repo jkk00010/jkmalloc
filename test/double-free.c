@@ -4,7 +4,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#ifdef __GNUC__
+#if defined __GNUC__ && !defined __clang__
 #pragma GCC diagnostic ignored "-Wuse-after-free"
 #endif
 
@@ -14,7 +14,7 @@ int main(void)
 
 	char *ptr = malloc(sizeof(buf));
 	memcpy(ptr, buf, sizeof(buf));
-	printf("%p: %s\n", ptr, ptr);
+	printf("%p: %s\n", (void*)ptr, ptr);
 
 	free(ptr);
 	printf("freed\n");

@@ -7,9 +7,9 @@ int main(void)
 {
 	char *ptr = malloc(1);
 	long pagesize = sysconf(_SC_PAGESIZE);
-	printf("ptr: %p, pagesize %ld\n", ptr, pagesize);
+	printf("ptr: %p, pagesize %ld\n", (void*)ptr, pagesize);
 	for (int i = 0; i <= pagesize; i++) {
 		ptr[i] = '\0';
 	}
-	printf("should not be reached: %p\n", ptr);
+	printf("should not be reached: %p\n", (void*)ptr);
 }
