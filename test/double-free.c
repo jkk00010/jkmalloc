@@ -4,6 +4,10 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef __GNUC__
+#pragma GCC diagnostic ignored "-Wuse-after-free"
+#endif
+
 int main(void)
 {
 	const char buf[] = "THIS IS A CONSTANT STRING";
