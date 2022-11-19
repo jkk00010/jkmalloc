@@ -1,10 +1,9 @@
 #define _POSIX_C_SOURCE 200809L
+#include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdint.h>
-#include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -12,30 +11,41 @@
 #include "jkmalloc.h"
 
 #ifndef PAGESIZE
-#define PAGESIZE jk_pagesize()
-static size_t jk_pagesize(void)
-{
-	static size_t pagesize = 0;
-	if (pagesize == 0) {
-		pagesize = (size_t)sysconf(_SC_PAGESIZE);
-	}
-	return pagesize;
-}
+#define PAGESIZE 4096
 #endif
 
 #define JKMALLOC_EXIT_VALUE (127 + SIGSEGV)
-#define PAGES_PER_TRIE	(1024)
-#define TRIE_SIZE	(PAGESIZE * PAGES_PER_TRIE)
+#define BUCKETS_PER_NODE	((PAGESIZE - sizeof(struct jk_list)) / sizeof(struct jk_bucket))
 
 struct jk_bucket {
-	enum { FREE, ALLOCATED, OVER, UNDER, ZERO } state;
-	size_t used;
-	size_t allocated;
-	void *under;
-	void *over;
+	enum { UNUSED, FREE, ALLOCATED } state;
+	uintptr_t start;
+	size_t size;
 };
 
-static void jk_set_sigaction(void);
+struct jk_list {
+	struct jk_list *next;
+	struct jk_bucket b[];
+};
+
+static struct jk_list *jk_head = NULL;
+
+static void jk_error(const char *s, void *addr)
+{
+	write(STDOUT_FILENO, s, strlen(s));
+	if (addr != NULL) {
+		char hex[] = "01234567890abcdef";
+		char ha[sizeof(uintptr_t) * 2 + 5] = ": 0x";
+		uintptr_t a = (uintptr_t)addr;
+		for (size_t i = 0; i < sizeof(uintptr_t); i++) {
+			ha[4 + 2 * i] = hex[a & 0xf];
+			ha[4 + 2 * i + 1] = hex[a & 0xf];
+		}
+		write(STDOUT_FILENO, ha, sizeof(ha));
+	}
+	write(STDOUT_FILENO, "\n", 1);
+	_exit(JKMALLOC_EXIT_VALUE);
+}
 
 static void *jk_page_alloc(size_t npages)
 {
@@ -58,97 +68,63 @@ static void *jk_page_alloc(size_t npages)
 	return pages;
 }
 
-static struct jk_bucket *jk_bucket(void *ptr, int allocate)
+#define jk_pages(bytes) (((bytes + PAGESIZE - 1) / PAGESIZE) + 2)
+
+static struct jk_bucket *jk_bucket(void *addr)
 {
-	/* FIXME: check return values of page_alloc() */
-
-	/* FIXME: assumption that one page can hold UCHAR_MAX uintptr_t */
-	/*
-	static size_t per_trie = 0;
-	if (per_trie == 0) {
-		per_trie = TRIE_SIZE / sizeof(uintptr_t);
-	}
-	*/
-
-	static uintptr_t *trie_top = NULL;
-	if (trie_top == NULL) {
-		trie_top = jk_page_alloc(1);
-		memset(trie_top, 0, PAGESIZE);
-		jk_set_sigaction();
-	}
-
-	uintptr_t *trie = trie_top;
-	uintptr_t addr = (uintptr_t)ptr;
-	for (size_t i = 0; i < sizeof(addr); i++) {
-		uintptr_t next = (addr >> ((sizeof(addr) - i) * CHAR_BIT))
-			& UCHAR_MAX;
-
-		if (trie[next] == 0) {
-			if (allocate) {
-				uintptr_t *newtrie = jk_page_alloc(1);
-				memset(newtrie, 0, PAGESIZE);
-				trie[next] = (uintptr_t) newtrie;
-			} else {
-				return NULL;
+	uintptr_t a = (uintptr_t)addr;
+	for (struct jk_list *l = jk_head; l != NULL; l = l->next) {
+		for (size_t i = 0; i < BUCKETS_PER_NODE; i++) {
+			uintptr_t bot = l->b[i].start - PAGESIZE;
+			uintptr_t top = l->b[i].start + (jk_pages(l->b[i].size) + 1) * PAGESIZE;
+			if (bot <= a && a <= top) {
+				return l->b + i;
 			}
 		}
-		trie = (uintptr_t*)trie[next];
 	}
-	return trie ? (struct jk_bucket *)trie : NULL;
+
+	return NULL;
 }
 
 static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 {
 	(void)sig; (void)addr;
-	struct jk_bucket *bucket = jk_bucket(si->si_addr, 0);
+	struct jk_bucket *bucket = jk_bucket(si->si_addr);
 
-	if (!bucket) {
+	if (!bucket || bucket->start == 0) {
 		psiginfo(si, NULL);
 		if (si->si_addr == NULL) {
-			fprintf(stderr, "NULL pointer dereference\n");
+			jk_error("NULL pointer dereference", NULL);
 		}
 	} else {
 		psiginfo(si, "Heap Error");
-		switch (bucket->state) {
-		case FREE:
-			fprintf(stderr, "Use after free detected\n");
-			break;
-		case UNDER:
-			fprintf(stderr, "Heap underflow detected\n");
-			break;
-		case OVER:
-			fprintf(stderr, "Heap overflow detected\n");
-			break;
-		case ZERO:
-			fprintf(stderr, "Attempt to use 0-byte allocation\n");
-			break;
-		default:
-			break;
+		if (bucket->state == FREE) {
+			jk_error("Use after free() detected", si->si_addr);
+		} else if (bucket->size == 0) {
+			jk_error("Attempt to use 0-byte allocation", si->si_addr);
+		} else if ((uintptr_t)si->si_addr < bucket->start) {
+			jk_error("Heap underflow detected", si->si_addr);
+		} else if ((uintptr_t)si->si_addr > bucket->start + bucket->size) {
+			jk_error("Heap overflow detected", si->si_addr);
 		}
-		/*
-		fprintf(stderr, "used: %zd\n", bucket->used);
-		fprintf(stderr, "allocated: %zd\n", bucket->allocated);
-		fprintf(stderr, "over: %p\n", bucket->over);
-		fprintf(stderr, "under: %p\n", bucket->under);
-		*/
 	}
-	_exit(JKMALLOC_EXIT_VALUE);
-}
-
-static void jk_abort(const char *func, void *ptr)
-{
-	fprintf(stderr, "%s(): invalid pointer %p\n", func, ptr);
 	_exit(JKMALLOC_EXIT_VALUE);
 }
 
 static void jk_set_sigaction(void)
 {
+	static int set = 0;
+	if (set) {
+		return;
+	}
+
 	struct sigaction sa = {
 		.sa_flags = SA_SIGINFO,
 		.sa_sigaction = jk_sigaction,
 	};
 	sigemptyset(&sa.sa_mask);
 	sigaction(SIGSEGV, &sa, NULL);
+	set = 1;
 }
 
 void *jk_calloc(size_t nelem, size_t elsize)
@@ -156,6 +132,7 @@ void *jk_calloc(size_t nelem, size_t elsize)
 	size_t n = nelem * elsize;
 	if (n < nelem || n < elsize) {
 		/* overflow */
+		errno = ENOMEM;
 		return NULL;
 	}
 	void *ptr = jk_malloc(n);
@@ -165,28 +142,55 @@ void *jk_calloc(size_t nelem, size_t elsize)
 
 void *jk_malloc(size_t nbytes)
 {
-	size_t pages = 2 + (nbytes / PAGESIZE);
-	if (nbytes % PAGESIZE != 0) {
-		pages++;
-	}
+	jk_set_sigaction();
+
+	size_t pages = jk_pages(nbytes);
 
 	char *ptr = jk_page_alloc(pages);
 	if (ptr == MAP_FAILED) {
+		errno = ENOMEM;
 		return NULL;
 	}
 
-	struct jk_bucket *b = jk_bucket(ptr + PAGESIZE, 1);
-	b->used = nbytes;
-	b->allocated = pages * PAGESIZE;
-	b->under = ptr;
-	b->over = ptr + ((pages - 1) * PAGESIZE);
-	b->state = ALLOCATED;
-	if (nbytes == 0) {
-		b->state = ZERO;
+	char *start = ptr + PAGESIZE;
+
+	struct jk_bucket *b = jk_bucket(ptr);
+	if (b == NULL) {
+		//b = jk_add_bucket(ptr);
+		if (jk_head == NULL) {
+			jk_head = jk_page_alloc(1);
+		}
+
+		for (struct jk_list *l = jk_head; l != NULL; l = l->next) {
+			for (size_t i = 0; i < BUCKETS_PER_NODE; i++) {
+				if (l->b[i].state == UNUSED) {
+					b = l->b + i;
+					break;
+				}
+			}
+			if (b != NULL) {
+				break;
+			}
+			if (l->next == NULL) {
+				l->next = jk_page_alloc(1);
+			}
+		}
 	}
 
-	mprotect(b->under, PAGESIZE, PROT_NONE);
-	mprotect(b->over, PAGESIZE, PROT_NONE);
+	if (b == NULL) {
+		errno = ENOMEM;
+		return NULL;
+	}
+
+	b->state = ALLOCATED;
+	b->start = (uintptr_t)start;
+	b->size = nbytes;
+
+	void *under = ptr;
+	void *over = ptr + ((pages - 1) * PAGESIZE);
+
+	mprotect(under, PAGESIZE, PROT_NONE);
+	mprotect(over, PAGESIZE, PROT_NONE);
 
 	return ptr + PAGESIZE;
 }
@@ -197,25 +201,27 @@ void *jk_realloc(void *ptr, size_t n)
 		return jk_malloc(n);
 	}
 
-	struct jk_bucket *b = jk_bucket(ptr, 0);
-	if (b == NULL) {
-		jk_abort(__func__, ptr);
+	struct jk_bucket *b = jk_bucket(ptr);
+	if (b == NULL || b->start != (uintptr_t)ptr || b->state != ALLOCATED) {
+		jk_error("Attempt to realloc() non-dynamic address", ptr);
 	}
 
-	if (n < (b->allocated - (PAGESIZE * 2))) {
-		b->used = n;
-		char *over = (char*)ptr + b->used + (PAGESIZE - (PAGESIZE % b->used));
-		if (over != b->over) {
-			mprotect(over, PAGESIZE, PROT_NONE);
-			munmap(over + PAGESIZE, (char*)b->over - over - PAGESIZE);
-			b->over = over;
-		}
+	size_t newpages = jk_pages(n);
+	size_t oldpages = jk_pages(b->size);
+	if (newpages == oldpages) {
+		b->size = n;
 		return ptr;
+	}
+
+	if (newpages < oldpages) {
+		/* TODO: mprotect() the newly inaccessible pages */
+		/* this is an optimazation only */
+		/* falling through to malloc(), memcpy(), free() is still correct */
 	}
 
 	void *newptr = jk_malloc(n);
 	if (newptr != NULL) {
-		memcpy(newptr, ptr, b->used);
+		memcpy(newptr, ptr, b->size);
 		jk_free(ptr);
 	}
 	return newptr;
@@ -227,24 +233,21 @@ void jk_free(void *ptr)
 		return;
 	}
 
-	struct jk_bucket *b = jk_bucket(ptr, 0);
-	if (b == NULL) {
-		jk_abort(__func__, ptr);
+	struct jk_bucket *b = jk_bucket(ptr);
+	if (b == NULL || b->start != (uintptr_t)ptr) {
+		jk_error("Attempt to free() non-dynamic address", ptr);
 	}
 
 	if (b->state == FREE) {
-		fprintf(stderr, "Attempt to double free(%p)\n", ptr);
-		_exit(JKMALLOC_EXIT_VALUE);
+		jk_error("Attempt to double free()", ptr);
 	}
 
 	if (b->state != ALLOCATED) {
-		fprintf(stderr, "Attempt to free(%p) unallocated memory\n", ptr);
-		_exit(JKMALLOC_EXIT_VALUE);
+		jk_error("Attempt to free() non-allocated address", ptr);
 	}
 
-	char *base = ptr;
-	base -= PAGESIZE;
-	munmap(base, b->allocated);
+	char *base = (char*)b->start - PAGESIZE;
+	munmap(base, PAGESIZE * jk_pages(b->size));
 	b->state = FREE;
 
 }
