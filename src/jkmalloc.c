@@ -70,15 +70,20 @@ static void *jk_page_alloc(size_t npages)
 
 #define jk_pages(bytes) (((bytes + PAGESIZE - 1) / PAGESIZE) + 2)
 
-static struct jk_bucket *jk_bucket(void *addr)
+static struct jk_bucket *jk_bucket(void *addr, int range)
 {
 	uintptr_t a = (uintptr_t)addr;
 	for (struct jk_list *l = jk_head; l != NULL; l = l->next) {
 		for (size_t i = 0; i < BUCKETS_PER_NODE; i++) {
-			uintptr_t bot = l->b[i].start - PAGESIZE;
-			uintptr_t top = l->b[i].start + (jk_pages(l->b[i].size) + 1) * PAGESIZE;
-			if (bot <= a && a <= top) {
+			if (l->b[i].start == a) {
 				return l->b + i;
+			}
+			if (range) {
+				uintptr_t bot = l->b[i].start - PAGESIZE;
+				uintptr_t top = l->b[i].start + (jk_pages(l->b[i].size) + 1) * PAGESIZE;
+				if (bot <= a && a <= top) {
+					return l->b + i;
+				}
 			}
 		}
 	}
@@ -89,7 +94,7 @@ static struct jk_bucket *jk_bucket(void *addr)
 static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 {
 	(void)sig; (void)addr;
-	struct jk_bucket *bucket = jk_bucket(si->si_addr);
+	struct jk_bucket *bucket = jk_bucket(si->si_addr, 1);
 
 	if (!bucket || bucket->start == 0) {
 		psiginfo(si, NULL);
@@ -154,9 +159,8 @@ void *jk_malloc(size_t nbytes)
 
 	char *start = ptr + PAGESIZE;
 
-	struct jk_bucket *b = jk_bucket(ptr);
+	struct jk_bucket *b = jk_bucket(ptr, 0);
 	if (b == NULL) {
-		//b = jk_add_bucket(ptr);
 		if (jk_head == NULL) {
 			jk_head = jk_page_alloc(1);
 		}
@@ -201,7 +205,7 @@ void *jk_realloc(void *ptr, size_t n)
 		return jk_malloc(n);
 	}
 
-	struct jk_bucket *b = jk_bucket(ptr);
+	struct jk_bucket *b = jk_bucket(ptr, 0);
 	if (b == NULL || b->start != (uintptr_t)ptr || b->state != ALLOCATED) {
 		jk_error("Attempt to realloc() non-dynamic address", ptr);
 	}
@@ -233,7 +237,7 @@ void jk_free(void *ptr)
 		return;
 	}
 
-	struct jk_bucket *b = jk_bucket(ptr);
+	struct jk_bucket *b = jk_bucket(ptr, 0);
 	if (b == NULL || b->start != (uintptr_t)ptr) {
 		jk_error("Attempt to free() non-dynamic address", ptr);
 	}
