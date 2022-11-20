@@ -1,3 +1,4 @@
+#define _DEFAULT_SOURCE "give me anonymous, gnu"
 #define _POSIX_C_SOURCE 200809L
 #include <errno.h>
 #include <fcntl.h>
@@ -11,19 +12,21 @@
 #include "jkmalloc.h"
 
 #ifndef PAGESIZE
-#define PAGESIZE 4096
+#define PAGESIZE	(4096)
 #endif
 
-#define JKMALLOC_EXIT_VALUE	(127 + SIGSEGV)
-#define JK_MAGIC_SIZE		(32)
-#define JK_FREE_LIST_SIZE	(16)
+#define PTR_BITS	(CHAR_BIT * sizeof(uintptr_t))
 
-static const char jk_underflow_block[JK_MAGIC_SIZE] = "jk_underflow_block";
-static const char jk_free_block[JK_MAGIC_SIZE] = "jk_free_block";
-static const char jk_overflow_block[JK_MAGIC_SIZE] = "jk_overflow_block";
+#define JKMALLOC_EXIT_VALUE	(127 + SIGSEGV)
+#define JK_FREE_LIST_SIZE	(8)
+
+/* magic numbers derived from CRC-32 of jk_foo_block */
+#define JK_FREE_MAGIC		(0x551a51dc)
+#define JK_UNDER_MAGIC		(0xcb2873ac)
+#define JK_OVER_MAGIC		(0x18a12c17)
 
 struct jk_bucket {
-	char magic[JK_MAGIC_SIZE];
+	uint32_t magic;
 	uintptr_t start;
 	size_t size;
 	size_t align;
@@ -42,8 +45,8 @@ static void jk_error(const char *s, void *addr)
 			char ha[sizeof(uintptr_t) * 2 + 5] = ": 0x";
 			uintptr_t a = (uintptr_t)addr;
 			for (size_t i = 0; i < sizeof(uintptr_t); i++) {
-				ha[4 + 2 * i] = hex[a & 0xf];
-				ha[4 + 2 * i + 1] = hex[a & 0xf];
+				ha[4 + 2 * i] = hex[(a >> (PTR_BITS - i)) & 0xf];
+				ha[4 + 2 * i + 1] = hex[(a >> (PTR_BITS - i + 1)) & 0xf];
 			}
 			write(STDERR_FILENO, ha, sizeof(ha));
 		}
@@ -75,14 +78,9 @@ static void *jk_page_alloc(size_t npages)
 	return pages;
 }
 
-#define jk_pages(bytes) (((bytes + PAGESIZE - 1) / PAGESIZE) + 2)
-#define jk_pageof(addr) ((void*)((uintptr_t)addr - ((uintptr_t)addr % PAGESIZE)))
-
-static struct jk_bucket *jk_bucket(void *addr)
-{
-	uintptr_t a = (uintptr_t)addr;
-	return (void*)(a - (a % PAGESIZE) - PAGESIZE);
-}
+#define jk_pages(bytes)		(((bytes + PAGESIZE - 1) / PAGESIZE) + 2)
+#define jk_pageof(addr)		((void*)((uintptr_t)addr - ((uintptr_t)addr % PAGESIZE)))
+#define jk_bucketof(addr)	((void*)((uintptr_t)jk_pageof(addr) - PAGESIZE))
 
 static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 {
@@ -98,37 +96,32 @@ static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 		jk_error(NULL, NULL);
 	}
 
-	if (!memcmp(bucket->magic, jk_underflow_block, sizeof(bucket->magic))) {
+	switch (bucket->magic) {
+	case JK_UNDER_MAGIC:
 		if (bucket->size == 0) {
 			psiginfo(si, "Attempt to use 0-byte allocation");
 		} else {
 			psiginfo(si, "Heap underflow detected");
 		}
-	}
-	if (!memcmp(bucket->magic, jk_overflow_block, sizeof(bucket->magic))) {
-		psiginfo(si, "Heap overflow detected");
-	}
-	if (!memcmp(bucket->magic, jk_free_block, sizeof(bucket->magic))) {
+		break;
+
+	case JK_OVER_MAGIC:
+		if (bucket->size == 0) {
+			psiginfo(si, "Attempt to use 0-byte allocation");
+		} else {
+			psiginfo(si, "Heap overflow detected");
+		}
+		break;
+
+	case JK_FREE_MAGIC:
 		psiginfo(si, "Use after free() detected");
+		break;
+
+	default:
+		psiginfo(si, NULL);
 	}
 
 	jk_error(NULL, NULL);
-}
-
-static void jk_set_sigaction(void)
-{
-	static int set = 0;
-	if (set) {
-		return;
-	}
-
-	struct sigaction sa = {
-		.sa_flags = SA_SIGINFO,
-		.sa_sigaction = jk_sigaction,
-	};
-	sigemptyset(&sa.sa_mask);
-	sigaction(SIGSEGV, &sa, NULL);
-	set = 1;
 }
 
 void *jk_calloc(size_t nelem, size_t elsize)
@@ -146,9 +139,19 @@ void *jk_calloc(size_t nelem, size_t elsize)
 
 int jk_memalign(void **memptr, size_t alignment, size_t size)
 {
-	jk_set_sigaction();
 	if (memptr == NULL) {
 		return EINVAL;
+	}
+
+	static int sa_set = 0;
+	if (!sa_set) {
+		struct sigaction sa = {
+			.sa_flags = SA_SIGINFO,
+			.sa_sigaction = jk_sigaction,
+		};
+		sigemptyset(&sa.sa_mask);
+		sigaction(SIGSEGV, &sa, NULL);
+		sa_set = 1;
 	}
 
 	size_t pages = jk_pages(size);
@@ -159,16 +162,22 @@ int jk_memalign(void **memptr, size_t alignment, size_t size)
 		return ENOMEM;
 	}
 
-	memcpy(under->magic, jk_underflow_block, sizeof(under->magic));
-	under->start = (uintptr_t)under + PAGESIZE;
+	under->magic = JK_UNDER_MAGIC;
 	under->size = size;
 	under->align = alignment;
 	under->pages = pages;
-	/* TODO: alignment */
+	under->start = (uintptr_t)under + PAGESIZE;
+	if (size % PAGESIZE != 0) {
+		under->start += PAGESIZE - size % PAGESIZE;
+		if (under->start % under->align != 0) {
+			under->start -= under->start % under->align;
+		}
+	}
 
 	struct jk_bucket *over = (void*)((char*)under + PAGESIZE * (pages - 1));
-	memcpy(over->magic, jk_overflow_block, sizeof(over->magic));
+	over->magic = JK_OVER_MAGIC;
 	over->start = under->start;
+	over->size = under->size;
 
 	*memptr = (void*)under->start;
 
@@ -198,16 +207,16 @@ void *jk_realloc(void *ptr, size_t n)
 		return jk_malloc(n);
 	}
 
-	struct jk_bucket *b = jk_bucket(ptr);
+	struct jk_bucket *b = jk_bucketof(ptr);
 	if (mprotect(b, PAGESIZE, PROT_READ | PROT_WRITE) != 0) {
 		jk_error("Attempt to realloc() non-dynamic address", ptr);
 	}
 
-	if (!memcmp(b->magic, jk_free_block, sizeof(b->magic))) {
+	if (b->magic == JK_FREE_MAGIC) {
 		jk_error("Attempt to realloc() after free()", ptr);
 	}
 
-	if (memcmp(b->magic, jk_underflow_block, sizeof(b->magic)) != 0) {
+	if (b->magic != JK_UNDER_MAGIC) {
 		jk_error("Attempt to realloc() non-dynamic address", ptr);
 	}
 
@@ -217,18 +226,21 @@ void *jk_realloc(void *ptr, size_t n)
 
 	size_t newpages = jk_pages(n);
 	if (newpages == b->pages) {
+		/* TODO: this is more complex with right-alignment */
+		/*
 		b->size = n;
 		mprotect(b, PAGESIZE, PROT_NONE);
 		return ptr;
+		*/
 	}
 
 	if (newpages < b->pages) {
 		/* TODO: mprotect() the newly inaccessible pages */
-		/* this is an optimazation only */
+		/* this is an optimization only */
 		/* falling through to malloc(), memcpy(), free() is still correct */
 	}
 
-	void *newptr = jk_malloc(n);
+	void *newptr = jk_aligned_alloc(b->align, n);
 	if (newptr != NULL) {
 		memcpy(newptr, ptr, b->size);
 		jk_free(ptr);
@@ -242,16 +254,16 @@ void jk_free(void *ptr)
 		return;
 	}
 
-	struct jk_bucket *b = jk_bucket(ptr);
+	struct jk_bucket *b = jk_bucketof(ptr);
 	if (mprotect(b, PAGESIZE, PROT_READ | PROT_WRITE) != 0) {
 		jk_error("Attempt to free() non-dynamic address", ptr);
 	}
 
-	if (!memcmp(b->magic, jk_free_block, sizeof(b->magic))) {
+	if (b->magic == JK_FREE_MAGIC) {
 		jk_error("Double free() detected", ptr);
 	}
 
-	if (memcmp(b->magic, jk_underflow_block, sizeof(b->magic)) != 0) {
+	if (b->magic != JK_UNDER_MAGIC) {
 		jk_error("Attempt to free() non-dynamic address", ptr);
 	}
 
@@ -264,12 +276,11 @@ void jk_free(void *ptr)
 
 	for (size_t i = 0; i < b->pages; i++) {
 		struct jk_bucket *p = (void*)(base + i * PAGESIZE);
-		memcpy(p->magic, jk_free_block, sizeof(p->magic));
+		p->magic = JK_FREE_MAGIC;
 		p->start = b->start;
 		p->size = b->size;
 	}
 
-	mprotect(base, PAGESIZE * b->pages, PROT_NONE);
 	size_t fb = jk_free_buckets % JK_FREE_LIST_SIZE;
 	if (jk_free_buckets > JK_FREE_LIST_SIZE) {
 		mprotect(jk_free_list[fb], PAGESIZE, PROT_READ);
@@ -277,4 +288,5 @@ void jk_free(void *ptr)
 	}
 	jk_free_list[fb] = b;
 	jk_free_buckets++;
+	mprotect(b, PAGESIZE * b->pages, PROT_NONE);
 }
