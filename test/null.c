@@ -5,11 +5,8 @@
 
 int main(void)
 {
-	char *ptr = malloc(1);
+	char *ptr = malloc(1);	/* purely to load the signal handler */
 	ptr = NULL;
-	long pagesize = sysconf(_SC_PAGESIZE);
-	printf("ptr: %p, pagesize %ld\n", (void*)ptr, pagesize);
 	ptr[0] = '\0';
-
-	printf("should not be reached: %p\n", (void*)ptr);
+	printf("undetected: NULL pointer dereference");
 }

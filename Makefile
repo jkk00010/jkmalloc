@@ -11,17 +11,15 @@ CFLAGS=-I$(INCDIR) -Wall -Wextra -Wpedantic -g -fPIC
 
 OBJECTS=$(OBJDIR)/jkmalloc.o
 WRAPOBJECTS=$(OBJECTS) $(OBJDIR)/wrap.o
-TESTS=$(BINDIR)/overflow \
-	$(BINDIR)/underflow \
+TESTS=$(BINDIR)/page-overflow \
+	$(BINDIR)/page-underflow \
 	$(BINDIR)/zero-alloc \
-	$(BINDIR)/realloc \
 	$(BINDIR)/use-after-free \
 	$(BINDIR)/double-free \
 	$(BINDIR)/invalid-free \
 	$(BINDIR)/invalid-realloc \
-	$(BINDIR)/wrapper \
-	$(BINDIR)/small-overflow \
-	$(BINDIR)/small-underflow \
+	$(BINDIR)/byte-overflow \
+	$(BINDIR)/byte-underflow \
 	$(BINDIR)/null
 
 tests: all $(TESTS)
@@ -50,22 +48,20 @@ $(LIBDIR)/libjkmalloc.so: $(WRAPOBJECTS)
 	$(CC) -o $@ -shared $(WRAPOBJECTS)
 
 $(TESTS): $(LIBDIR)/libjkmalloc.a
-$(BINDIR)/overflow: $(TESTDIR)/overflow.c
-$(BINDIR)/underflow: $(TESTDIR)/underflow.c
+$(BINDIR)/page-overflow: $(TESTDIR)/page-overflow.c
+$(BINDIR)/page-underflow: $(TESTDIR)/page-underflow.c
 $(BINDIR)/zero: $(TESTDIR)/zero.c
-$(BINDIR)/realloc: $(TESTDIR)/realloc.c
 $(BINDIR)/use-after-free: $(TESTDIR)/use-after-free.c
 $(BINDIR)/double-free: $(TESTDIR)/double-free.c
 $(BINDIR)/invalid-free: $(TESTDIR)/invalid-free.c
 $(BINDIR)/invalid-realloc: $(TESTDIR)/invalid-realloc.c
-$(BINDIR)/wrapper: $(TESTDIR)/wrapper.c
 $(BINDIR)/null: $(TESTDIR)/null.c
-$(BINDIR)/small-overflow: $(TESTDIR)/small-overflow.c
-$(BINDIR)/small-underflow: $(TESTDIR)/small-underflow.c
+$(BINDIR)/byte-overflow: $(TESTDIR)/byte-overflow.c
+$(BINDIR)/byte-underflow: $(TESTDIR)/byte-underflow.c
 
 $(TESTS):
 	@mkdir -p $(@D)
-	$(CC) -o $@ $(CFLAGS) $(TESTDIR)/$(@F).c
+	$(CC) -o $@ $(CFLAGS) -O0 $(TESTDIR)/$(@F).c
 
 clean:
 	$(RM) -rf $(LIBDIR) $(OBJDIR) $(BINDIR)

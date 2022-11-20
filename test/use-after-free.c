@@ -1,8 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
-#include <unistd.h>
 
 #if defined __GNUC__ && !defined __clang__
 #pragma GCC diagnostic ignored "-Wuse-after-free"
@@ -10,14 +8,8 @@
 
 int main(void)
 {
-	const char buf[] = "THIS IS A CONSTANT STRING";
-
-	char *ptr = malloc(sizeof(buf));
-	memcpy(ptr, buf, sizeof(buf));
-	printf("%p: %s\n", (void*)ptr, ptr);
-
+	char *ptr = malloc(1);
 	free(ptr);
-	printf("freed\n");
-
-	printf("should not be reached: %p: %s\n", (void*)ptr, ptr);
+	*ptr = '\0';
+	puts("undetected: use after free");
 }

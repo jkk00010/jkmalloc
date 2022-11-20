@@ -12,5 +12,5 @@ int main(void)
 {
 	int foo = 42;
 	free(&foo);
-	printf("should not be reached: freed\n");
+	puts("undetected: free() on automatic address");
 }

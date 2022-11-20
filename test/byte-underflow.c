@@ -6,8 +6,6 @@
 int main(void)
 {
 	char *ptr = malloc(1);
-	long pagesize = sysconf(_SC_PAGESIZE);
-	printf("ptr: %p, pagesize %ld\n", (void*)ptr, pagesize);
 	ptr[-1] = '\0';
-	printf("shouldn't get here\n");
+	puts("undetected: byte underflow");
 }

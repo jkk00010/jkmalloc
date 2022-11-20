@@ -12,5 +12,6 @@ int main(void)
 {
 	int foo = 42;
 	int *ptr = realloc(&foo, sizeof(int));
-	printf("should not be reached: %d\n", *ptr);
+	*ptr = 42;
+	puts("undetected: realloc() on automatic address");
 }

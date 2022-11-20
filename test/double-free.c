@@ -11,14 +11,9 @@
 int main(void)
 {
 	const char buf[] = "THIS IS A CONSTANT STRING";
-
 	char *ptr = malloc(sizeof(buf));
 	memcpy(ptr, buf, sizeof(buf));
-	printf("%p: %s\n", (void*)ptr, ptr);
-
 	free(ptr);
-	printf("freed\n");
-
 	free(ptr);
-	printf("should not be reached: freed again\n");
+	puts("undetected: double free");
 }

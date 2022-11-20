@@ -9,7 +9,7 @@ int main(void)
 	long pagesize = sysconf(_SC_PAGESIZE);
 	printf("ptr: %p, pagesize %ld\n", (void*)ptr, pagesize);
 	for (int i = 0; i <= pagesize; i++) {
-		ptr[i] = '\0';
+		ptr[-i] = '\0';
 	}
-	printf("should not be reached: %p\n", (void*)ptr);
+	puts("undetected: page underflow");
 }
