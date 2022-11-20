@@ -44,6 +44,7 @@ static void jk_error(const char *s, void *addr)
 			char hex[] = "01234567890abcdef";
 			char ha[sizeof(uintptr_t) * 2 + 5] = ": 0x";
 			uintptr_t a = (uintptr_t)addr;
+			/* FIXME */
 			for (size_t i = 0; i < sizeof(uintptr_t); i++) {
 				ha[4 + 2 * i] = hex[(a >> (PTR_BITS - i)) & 0xf];
 				ha[4 + 2 * i + 1] = hex[(a >> (PTR_BITS - i + 1)) & 0xf];
