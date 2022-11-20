@@ -8,5 +8,5 @@ int main(void)
 	char *ptr = malloc(1);	/* purely to load the signal handler */
 	ptr = NULL;
 	ptr[0] = '\0';
-	printf("undetected: NULL pointer dereference");
+	puts("undetected: NULL pointer dereference");
 }

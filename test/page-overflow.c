@@ -10,5 +10,5 @@ int main(void)
 	for (int i = 0; i <= pagesize; i++) {
 		ptr[i] = '\0';
 	}
-	printf("undetected: page overflow");
+	puts("undetected: page overflow");
 }
