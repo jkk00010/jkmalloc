@@ -19,3 +19,13 @@ void free(void *p)
 {
 	jk_free(p);
 }
+
+int posix_memalign(void **memptr, size_t alignment, size_t size)
+{
+	return jk_memalign(memptr, alignment, size);
+}
+
+void *aligned_alloc(size_t alignment, size_t size)
+{
+	return jk_aligned_alloc(alignment, size);
+}
