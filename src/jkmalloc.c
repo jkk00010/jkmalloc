@@ -16,6 +16,7 @@
 
 #define JKMALLOC_EXIT_VALUE	(127 + SIGSEGV)
 #define JK_MAGIC_SIZE		(32)
+#define JK_FREE_LIST_SIZE	(16)
 
 static const char jk_underflow_block[JK_MAGIC_SIZE] = "jk_underflow_block";
 static const char jk_free_block[JK_MAGIC_SIZE] = "jk_free_block";
@@ -29,10 +30,13 @@ struct jk_bucket {
 	size_t pages;
 };
 
+static struct jk_bucket *jk_free_list[JK_FREE_LIST_SIZE];
+static size_t jk_free_buckets = 0;
+
 static void jk_error(const char *s, void *addr)
 {
 	if (s) {
-		write(STDOUT_FILENO, s, strlen(s));
+		write(STDERR_FILENO, s, strlen(s));
 		if (addr != NULL) {
 			char hex[] = "01234567890abcdef";
 			char ha[sizeof(uintptr_t) * 2 + 5] = ": 0x";
@@ -41,9 +45,9 @@ static void jk_error(const char *s, void *addr)
 				ha[4 + 2 * i] = hex[a & 0xf];
 				ha[4 + 2 * i + 1] = hex[a & 0xf];
 			}
-			write(STDOUT_FILENO, ha, sizeof(ha));
+			write(STDERR_FILENO, ha, sizeof(ha));
 		}
-		write(STDOUT_FILENO, "\n", 1);
+		write(STDERR_FILENO, "\n", 1);
 	}
 	_exit(JKMALLOC_EXIT_VALUE);
 }
@@ -163,7 +167,7 @@ int jk_memalign(void **memptr, size_t alignment, size_t size)
 	/* TODO: alignment */
 
 	struct jk_bucket *over = (void*)((char*)under + PAGESIZE * (pages - 1));
-	memcpy(under->magic, jk_underflow_block, sizeof(under->magic));
+	memcpy(over->magic, jk_overflow_block, sizeof(over->magic));
 	over->start = under->start;
 
 	*memptr = (void*)under->start;
@@ -199,19 +203,26 @@ void *jk_realloc(void *ptr, size_t n)
 		jk_error("Attempt to realloc() non-dynamic address", ptr);
 	}
 
+	if (!memcmp(b->magic, jk_free_block, sizeof(b->magic))) {
+		jk_error("Attempt to realloc() after free()", ptr);
+	}
+
 	if (memcmp(b->magic, jk_underflow_block, sizeof(b->magic)) != 0) {
-		jk_error("Attempt to free() non-dynamic address", ptr);
+		jk_error("Attempt to realloc() non-dynamic address", ptr);
+	}
+
+	if (b->start != (uintptr_t)ptr) {
+		jk_error("Attempt to reallocate() incorrect address", ptr);
 	}
 
 	size_t newpages = jk_pages(n);
-	size_t oldpages = jk_pages(b->size);
-	if (newpages == oldpages) {
+	if (newpages == b->pages) {
 		b->size = n;
 		mprotect(b, PAGESIZE, PROT_NONE);
 		return ptr;
 	}
 
-	if (newpages < oldpages) {
+	if (newpages < b->pages) {
 		/* TODO: mprotect() the newly inaccessible pages */
 		/* this is an optimazation only */
 		/* falling through to malloc(), memcpy(), free() is still correct */
@@ -244,7 +255,13 @@ void jk_free(void *ptr)
 		jk_error("Attempt to free() non-dynamic address", ptr);
 	}
 
+	if (b->start != (uintptr_t)ptr) {
+		jk_error("Attempt to free() incorrect address", ptr);
+	}
+
 	char *base = (char*)b;
+	mprotect(base, PAGESIZE * b->pages, PROT_READ | PROT_WRITE);
+
 	for (size_t i = 0; i < b->pages; i++) {
 		struct jk_bucket *p = (void*)(base + i * PAGESIZE);
 		memcpy(p->magic, jk_free_block, sizeof(p->magic));
@@ -252,5 +269,12 @@ void jk_free(void *ptr)
 		p->size = b->size;
 	}
 
-	munmap(base, PAGESIZE * jk_pages(b->size));
+	mprotect(base, PAGESIZE * b->pages, PROT_NONE);
+	size_t fb = jk_free_buckets % JK_FREE_LIST_SIZE;
+	if (jk_free_buckets > JK_FREE_LIST_SIZE) {
+		mprotect(jk_free_list[fb], PAGESIZE, PROT_READ);
+		munmap(jk_free_list[fb], PAGESIZE * jk_free_list[fb]->pages);
+	}
+	jk_free_list[fb] = b;
+	jk_free_buckets++;
 }
