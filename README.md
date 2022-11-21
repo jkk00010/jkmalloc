@@ -1,4 +1,4 @@
-jkmallov
+jkmalloc
 --------
 jkmalloc is a memory mapping based allocator with an API compatible with
 the C `<stdlib.h>` dynamic memory functions. By using memory mappings for each
