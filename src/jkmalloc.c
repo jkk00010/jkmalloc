@@ -25,6 +25,10 @@
 #define JK_UNDER_MAGIC		(0xcb2873ac)
 #define JK_OVER_MAGIC		(0x18a12c17)
 
+#define jk_pages(bytes)		(((bytes + PAGESIZE - 1) / PAGESIZE) + 2)
+#define jk_pageof(addr)		((void*)((uintptr_t)addr - ((uintptr_t)addr % PAGESIZE)))
+#define jk_bucketof(addr)	((void*)((uintptr_t)jk_pageof(addr) - PAGESIZE))
+
 struct jk_bucket {
 	uint32_t magic;
 	uintptr_t start;
@@ -78,10 +82,6 @@ static void *jk_page_alloc(size_t npages)
 
 	return pages;
 }
-
-#define jk_pages(bytes)		(((bytes + PAGESIZE - 1) / PAGESIZE) + 2)
-#define jk_pageof(addr)		((void*)((uintptr_t)addr - ((uintptr_t)addr % PAGESIZE)))
-#define jk_bucketof(addr)	((void*)((uintptr_t)jk_pageof(addr) - PAGESIZE))
 
 static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 {
