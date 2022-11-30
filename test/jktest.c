@@ -5,7 +5,6 @@
 #include <string.h>
 #include <unistd.h>
 
-#define JK_OVERRIDE_STDLIB
 #include "jkmalloc.h"
 
 int main(int argc, char *argv[])
