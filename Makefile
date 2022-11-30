@@ -22,7 +22,7 @@ TESTS=$(BINDIR)/page-overflow \
 	$(BINDIR)/byte-underflow \
 	$(BINDIR)/null
 
-tests: all $(TESTS)
+tests: all $(TESTS) $(BINDIR)/jktest
 
 all: $(LIBDIR)/libjkmalloc.a $(LIBDIR)/libjkmalloc.so $(BINDIR)/jk
 
@@ -58,6 +58,10 @@ $(BINDIR)/invalid-realloc: $(TESTDIR)/invalid-realloc.c
 $(BINDIR)/null: $(TESTDIR)/null.c
 $(BINDIR)/byte-overflow: $(TESTDIR)/byte-overflow.c
 $(BINDIR)/byte-underflow: $(TESTDIR)/byte-underflow.c
+
+$(BINDIR)/jktest: $(TESTDIR)/jktest.c $(LIBDIR)/libjkmalloc.a
+	@mkdir -p $(@D)
+	$(CC) -o $@ $(CFLAGS) $(TESTDIR)/$(@F).c $(LIBDIR)/libjkmalloc.a
 
 $(TESTS):
 	@mkdir -p $(@D)
