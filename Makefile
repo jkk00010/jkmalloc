@@ -5,7 +5,6 @@ LIBDIR=lib
 OBJDIR=obj
 SRCDIR=src
 INCDIR=include
-TESTDIR=test
 CC=c99
 CFLAGS=-I$(INCDIR) -Wall -Wextra -Wpedantic -g -fPIC
 
@@ -15,9 +14,9 @@ TESTS=$(BINDIR)/jktest-dynamic $(BINDIR)/jktest-static
 
 all: $(LIBDIR)/libjkmalloc.a $(LIBDIR)/libjkmalloc.so $(BINDIR)/jk $(TESTS)
 
-$(BINDIR)/jk: jk.sh
+$(BINDIR)/jk: $(SRCDIR)/jk.sh
 	@mkdir -p $(@D)
-	cp -f jk.sh $@
+	cp -f $(SRCDIR)/jk.sh $@
 	chmod 755 $@
 
 $(OBJDIR)/jkmalloc.o: $(SRCDIR)/jkmalloc.c $(INCDIR)/jkmalloc.h
@@ -36,13 +35,13 @@ $(LIBDIR)/libjkmalloc.so: $(WRAPOBJECTS)
 	@mkdir -p $(@D)
 	$(CC) -o $@ -shared $(WRAPOBJECTS)
 
-$(BINDIR)/jktest-dynamic: $(TESTDIR)/jktest.c
+$(BINDIR)/jktest-dynamic: $(SRCDIR)/jktest.c
 	@mkdir -p $(@D)
-	$(CC) -o $@ $(CFLAGS) $(TESTDIR)/jktest.c
+	$(CC) -o $@ $(CFLAGS) $(SRCDIR)/jktest.c
 
-$(BINDIR)/jktest-static: $(TESTDIR)/jktest.c $(LIBDIR)/libjkmalloc.a
+$(BINDIR)/jktest-static: $(SRCDIR)/jktest.c $(LIBDIR)/libjkmalloc.a
 	@mkdir -p $(@D)
-	$(CC) -o $@ $(CFLAGS) -DJK_OVERRIDE_STDLIB $(TESTDIR)/jktest.c $(LIBDIR)/libjkmalloc.a
+	$(CC) -o $@ $(CFLAGS) -DJK_OVERRIDE_STDLIB $(SRCDIR)/jktest.c $(LIBDIR)/libjkmalloc.a
 
 clean:
 	$(RM) -rf $(LIBDIR) $(OBJDIR) $(BINDIR)
