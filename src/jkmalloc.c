@@ -5,6 +5,7 @@
 #include <limits.h>
 #include <signal.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
@@ -35,6 +36,7 @@ struct jk_bucket {
 	size_t size;
 	size_t align;
 	size_t pages;
+	char trace[];
 };
 
 static struct jk_bucket *jk_free_list[JK_FREE_LIST_SIZE];
@@ -42,7 +44,7 @@ static size_t jk_free_buckets = 0;
 
 static void jk_error(const char *s, void *addr)
 {
-	if (s) {
+	if (s && *s) {
 		write(STDERR_FILENO, s, strlen(s));
 		if (addr != NULL) {
 			char hex[] = "01234567890abcdef";
@@ -122,28 +124,15 @@ static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 		psiginfo(si, NULL);
 	}
 
+	if (bucket->trace[0]) {
+		jk_error(bucket->trace, NULL);
+	}
+
 	jk_error(NULL, NULL);
 }
 
-void *jk_calloc(size_t nelem, size_t elsize)
+void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, size_t alignment, size_t size1, size_t size2)
 {
-	size_t n = nelem * elsize;
-	if (n < nelem || n < elsize) {
-		/* overflow */
-		errno = ENOMEM;
-		return NULL;
-	}
-	void *ptr = jk_malloc(n);
-	memset(ptr, 0, n);
-	return ptr;
-}
-
-int jk_memalign(void **memptr, size_t alignment, size_t size)
-{
-	if (memptr == NULL) {
-		return EINVAL;
-	}
-
 	static int sa_set = 0;
 	if (!sa_set) {
 		struct sigaction sa = {
@@ -155,12 +144,103 @@ int jk_memalign(void **memptr, size_t alignment, size_t size)
 		sa_set = 1;
 	}
 
+	/* free() */
+	if (alignment == 0) {
+		if (ptr == NULL) {
+			return NULL;
+		}
+
+		struct jk_bucket *b = jk_bucketof(ptr);
+		if (mprotect(b, PAGESIZE, PROT_READ | PROT_WRITE) != 0) {
+			jk_error("Attempt to free() non-dynamic address", ptr);
+		}
+
+		if (b->magic == JK_FREE_MAGIC) {
+			jk_error("Double free() detected", ptr);
+			/* TODO: trace */
+		}
+
+		if (b->magic != JK_UNDER_MAGIC) {
+			jk_error("Attempt to free() non-dynamic address", ptr);
+		}
+
+		if (b->start != (uintptr_t)ptr) {
+			jk_error("Attempt to free() incorrect address", ptr);
+		}
+
+		char *base = (char*)b;
+		mprotect(base, PAGESIZE * b->pages, PROT_READ | PROT_WRITE);
+
+		if (file) {
+			size_t len = strlen(b->trace);
+			snprintf(b->trace + len, PAGESIZE - sizeof(*b) - len,
+				"%sFreed by %s() (%s:%ju)", len ? "\n" : "", func, file, line);
+		}
+
+		for (size_t i = 0; i < b->pages; i++) {
+			struct jk_bucket *p = (void*)(base + i * PAGESIZE);
+			p->magic = JK_FREE_MAGIC;
+			p->start = b->start;
+			p->size = b->size;
+			strcpy(p->trace, b->trace);
+		}
+
+		size_t fb = jk_free_buckets % JK_FREE_LIST_SIZE;
+		if (jk_free_buckets > JK_FREE_LIST_SIZE) {
+			mprotect(jk_free_list[fb], PAGESIZE, PROT_READ);
+			munmap(jk_free_list[fb], PAGESIZE * jk_free_list[fb]->pages);
+		}
+		jk_free_list[fb] = b;
+		jk_free_buckets++;
+		mprotect(b, PAGESIZE * b->pages, PROT_NONE);
+		return NULL;
+	}
+
+	/* realloc() */
+	if (ptr) {
+		struct jk_bucket *b = jk_bucketof(ptr);
+		if (mprotect(b, PAGESIZE, PROT_READ | PROT_WRITE) != 0) {
+			jk_error("Attempt to realloc() non-dynamic address", ptr);
+		}
+
+		if (b->magic == JK_FREE_MAGIC) {
+			jk_error("Attempt to realloc() after free()", ptr);
+		}
+
+		if (b->magic != JK_UNDER_MAGIC) {
+			jk_error("Attempt to realloc() non-dynamic address", ptr);
+		}
+
+		if (b->start != (uintptr_t)ptr) {
+			jk_error("Attempt to reallocate() incorrect address", ptr);
+		}
+	
+		void *newptr = jkmalloc(NULL, NULL, 0, NULL, alignment, size1, size2);
+		if (newptr != NULL) {
+			memcpy(newptr, ptr, b->size);
+			jk_free(ptr);
+		}
+		return newptr;
+	}
+
+	size_t size = size1;
+
+	/* calloc() */
+	if (size2) {
+		size = size1 * size2;
+		if (size < size1 || size < size2) {
+			/* overflow */
+			errno = ENOMEM;
+			return NULL;
+		}
+	}
+
 	size_t pages = jk_pages(size);
 
 	struct jk_bucket *under = jk_page_alloc(pages);
 	if (under == MAP_FAILED) {
 		errno = ENOMEM;
-		return ENOMEM;
+		return NULL;
 	}
 
 	under->magic = JK_UNDER_MAGIC;
@@ -180,114 +260,34 @@ int jk_memalign(void **memptr, size_t alignment, size_t size)
 	over->start = under->start;
 	over->size = under->size;
 
-	*memptr = (void*)under->start;
+	ptr = (void*)under->start;
+
+	if (file) {
+		snprintf(under->trace, PAGESIZE - sizeof(*under), "Allocated by %s() (%s:%ju)", func, file, line);
+		strcpy(over->trace, under->trace);
+	}
+
+	/* calloc() */
+	if (size2) {
+		memset(ptr, '\0', size);
+	}
 
 	mprotect(under, PAGESIZE, PROT_NONE);
 	mprotect(over, PAGESIZE, PROT_NONE);
+	return ptr;
+}
+
+int jk_memalign(void **memptr, size_t alignment, size_t size)
+{
+	if (memptr == NULL) {
+		return EINVAL;
+	}
+
+	*memptr = jkmalloc(NULL, NULL, 0, NULL, alignment, size, 0);
+	if (*memptr == NULL) {
+		return errno;
+	}
 
 	return 0;
 }
 
-void *jk_aligned_alloc(size_t alignment, size_t size)
-{
-	void *ptr = NULL;
-	if (jk_memalign(&ptr, alignment, size) == 0) {
-		return ptr;
-	}
-	return NULL;
-}
-
-void *jk_malloc(size_t nbytes)
-{
-	return jk_aligned_alloc(1, nbytes);
-}
-
-void *jk_realloc(void *ptr, size_t n)
-{
-	if (ptr == NULL) {
-		return jk_malloc(n);
-	}
-
-	struct jk_bucket *b = jk_bucketof(ptr);
-	if (mprotect(b, PAGESIZE, PROT_READ | PROT_WRITE) != 0) {
-		jk_error("Attempt to realloc() non-dynamic address", ptr);
-	}
-
-	if (b->magic == JK_FREE_MAGIC) {
-		jk_error("Attempt to realloc() after free()", ptr);
-	}
-
-	if (b->magic != JK_UNDER_MAGIC) {
-		jk_error("Attempt to realloc() non-dynamic address", ptr);
-	}
-
-	if (b->start != (uintptr_t)ptr) {
-		jk_error("Attempt to reallocate() incorrect address", ptr);
-	}
-
-	size_t newpages = jk_pages(n);
-	if (newpages == b->pages) {
-		/* TODO: this is more complex with right-alignment */
-		/*
-		b->size = n;
-		mprotect(b, PAGESIZE, PROT_NONE);
-		return ptr;
-		*/
-	}
-
-	if (newpages < b->pages) {
-		/* TODO: mprotect() the newly inaccessible pages */
-		/* this is an optimization only */
-		/* falling through to malloc(), memcpy(), free() is still correct */
-	}
-
-	void *newptr = jk_aligned_alloc(b->align, n);
-	if (newptr != NULL) {
-		memcpy(newptr, ptr, b->size);
-		jk_free(ptr);
-	}
-	return newptr;
-}
-
-void jk_free(void *ptr)
-{
-	if (ptr == NULL) {
-		return;
-	}
-
-	struct jk_bucket *b = jk_bucketof(ptr);
-	if (mprotect(b, PAGESIZE, PROT_READ | PROT_WRITE) != 0) {
-		jk_error("Attempt to free() non-dynamic address", ptr);
-	}
-
-	if (b->magic == JK_FREE_MAGIC) {
-		jk_error("Double free() detected", ptr);
-	}
-
-	if (b->magic != JK_UNDER_MAGIC) {
-		jk_error("Attempt to free() non-dynamic address", ptr);
-	}
-
-	if (b->start != (uintptr_t)ptr) {
-		jk_error("Attempt to free() incorrect address", ptr);
-	}
-
-	char *base = (char*)b;
-	mprotect(base, PAGESIZE * b->pages, PROT_READ | PROT_WRITE);
-
-	for (size_t i = 0; i < b->pages; i++) {
-		struct jk_bucket *p = (void*)(base + i * PAGESIZE);
-		p->magic = JK_FREE_MAGIC;
-		p->start = b->start;
-		p->size = b->size;
-	}
-
-	size_t fb = jk_free_buckets % JK_FREE_LIST_SIZE;
-	if (jk_free_buckets > JK_FREE_LIST_SIZE) {
-		mprotect(jk_free_list[fb], PAGESIZE, PROT_READ);
-		munmap(jk_free_list[fb], PAGESIZE * jk_free_list[fb]->pages);
-	}
-	jk_free_list[fb] = b;
-	jk_free_buckets++;
-	mprotect(b, PAGESIZE * b->pages, PROT_NONE);
-}
