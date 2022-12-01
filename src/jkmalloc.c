@@ -298,6 +298,8 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 	if (file) {
 		snprintf(under->trace, jk_pagesize - sizeof(*under), "+++ %s() (%s:%ju)", func, file, line);
 		strcpy(over->trace, under->trace);
+	} else {
+		over->trace[0] = '\0';
 	}
 
 	/* calloc() */
