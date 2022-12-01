@@ -42,12 +42,23 @@ struct jk_bucket {
 	char trace[];
 };
 
+struct jk_source {
+	const char *file;
+	const char *func;
+	uintmax_t line;
+	struct jk_bucket *bucket;
+};
+
 static struct jk_bucket *jk_free_list[JK_FREE_LIST_SIZE];
 static size_t jk_free_buckets = 0;
 static size_t jk_pagesize = 0;
 
-static void jk_error(const char *s, void *addr)
+static void jk_error(const char *s, void *addr, struct jk_source *src)
 {
+	if (src && src->file) {
+		fprintf(stderr, "!!! %s (%s:%ju)\n", src->func, src->file, src->line);
+	}
+
 	if (s && *s) {
 		write(STDERR_FILENO, s, strlen(s));
 		if (addr != NULL) {
@@ -61,6 +72,11 @@ static void jk_error(const char *s, void *addr)
 			}
 			write(STDERR_FILENO, ha, sizeof(ha));
 		}
+		write(STDERR_FILENO, "\n", 1);
+	}
+
+	if (src && src->bucket && src->bucket->trace[0] != '\0') {
+		write(STDERR_FILENO, src->bucket->trace, strlen(src->bucket->trace));
 		write(STDERR_FILENO, "\n", 1);
 	}
 	_exit(JKMALLOC_EXIT_VALUE);
@@ -94,13 +110,13 @@ static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 	(void)sig; (void)addr;
 	if (si->si_addr == NULL) {
 		psiginfo(si, "NULL pointer dereference");
-		jk_error(NULL, NULL);
+		jk_error(NULL, NULL, NULL);
 	}
 
 	struct jk_bucket *bucket = jk_pageof(si->si_addr);
 	if (mprotect(bucket, jk_pagesize, PROT_READ) != 0) {
 		psiginfo(si, NULL);
-		jk_error(NULL, NULL);
+		jk_error(NULL, NULL, NULL);
 	}
 
 	switch (bucket->magic) {
@@ -128,11 +144,8 @@ static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 		psiginfo(si, NULL);
 	}
 
-	if (bucket->trace[0]) {
-		jk_error(bucket->trace, NULL);
-	}
-
-	jk_error(NULL, NULL);
+	struct jk_source src = { .bucket = bucket };
+	jk_error(NULL, NULL, &src);
 }
 
 void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, size_t alignment, size_t size1, size_t size2)
@@ -152,6 +165,12 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 		jk_pagesize = sysconf(_SC_PAGESIZE);
 	}
 
+	struct jk_source src = {
+		.file = file,
+		.func = func,
+		.line = line,
+	};
+
 	/* free() */
 	if (alignment == 0) {
 		if (ptr == NULL) {
@@ -162,20 +181,21 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 
 		struct jk_bucket *b = jk_bucketof(ptr);
 		if (mprotect(b, jk_pagesize, PROT_READ | PROT_WRITE) != 0) {
-			jk_error("Attempt to free() non-dynamic address", ptr);
+			jk_error("Attempt to free() non-dynamic address", ptr, &src);
 		}
 
+		src.bucket = b;
+
 		if (b->magic == JK_FREE_MAGIC) {
-			jk_error("Double free() detected", ptr);
-			/* TODO: trace */
+			jk_error("Double free() detected", ptr, &src);
 		}
 
 		if (b->magic != JK_UNDER_MAGIC) {
-			jk_error("Attempt to free() non-dynamic address", ptr);
+			jk_error("Attempt to free() non-dynamic address", ptr, &src);
 		}
 
 		if (b->start != (uintptr_t)ptr) {
-			jk_error("Attempt to free() incorrect address", ptr);
+			jk_error("Attempt to free() incorrect address", ptr, &src);
 		}
 
 		char *base = (char*)b;
@@ -187,12 +207,10 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 				"%s--- %s() (%s:%ju)", len ? "\n" : "", func, file, line);
 		}
 
-		for (size_t i = 0; i < b->pages; i++) {
-			struct jk_bucket *p = (void*)(base + i * jk_pagesize);
-			p->magic = JK_FREE_MAGIC;
-			p->start = b->start;
-			p->size = b->size;
-			strcpy(p->trace, b->trace);
+		b->magic = JK_FREE_MAGIC;
+
+		for (size_t i = 1; i < b->pages; i++) {
+			memcpy(base + i * jk_pagesize, b, jk_pagesize);
 		}
 
 		size_t fb = jk_free_buckets % JK_FREE_LIST_SIZE;
@@ -213,19 +231,21 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 
 		struct jk_bucket *b = jk_bucketof(ptr);
 		if (mprotect(b, jk_pagesize, PROT_READ | PROT_WRITE) != 0) {
-			jk_error("Attempt to realloc() non-dynamic address", ptr);
+			jk_error("Attempt to realloc() non-dynamic address", ptr, &src);
 		}
 
+		src.bucket = b;
+
 		if (b->magic == JK_FREE_MAGIC) {
-			jk_error("Attempt to realloc() after free()", ptr);
+			jk_error("Attempt to realloc() after free()", ptr, &src);
 		}
 
 		if (b->magic != JK_UNDER_MAGIC) {
-			jk_error("Attempt to realloc() non-dynamic address", ptr);
+			jk_error("Attempt to realloc() non-dynamic address", ptr, &src);
 		}
 
 		if (b->start != (uintptr_t)ptr) {
-			jk_error("Attempt to reallocate() incorrect address", ptr);
+			jk_error("Attempt to reallocate() incorrect address", ptr, &src);
 		}
 	
 		void *newptr = jkmalloc(NULL, NULL, 0, NULL, alignment, size1, size2);
