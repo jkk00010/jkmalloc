@@ -20,7 +20,7 @@
 #endif
 
 #ifndef PAGESIZE
-#define PAGESIZE	(4096)
+#define PAGESIZE	jk_pagesize
 #endif
 
 #define PTR_BITS	(CHAR_BIT * sizeof(uintptr_t))
@@ -48,6 +48,7 @@ struct jk_bucket {
 
 static struct jk_bucket *jk_free_list[JK_FREE_LIST_SIZE];
 static size_t jk_free_buckets = 0;
+static size_t jk_pagesize = 0;
 
 static void jk_error(const char *s, void *addr)
 {
@@ -149,6 +150,10 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 		sigemptyset(&sa.sa_mask);
 		sigaction(SIGSEGV, &sa, NULL);
 		sa_set = 1;
+	}
+
+	if (jk_pagesize == 0) {
+		jk_pagesize = sysconf(_SC_PAGESIZE);
 	}
 
 	/* free() */
@@ -288,18 +293,3 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 	mprotect(over, PAGESIZE, PROT_NONE);
 	return ptr;
 }
-
-int jk_memalign(void **memptr, size_t alignment, size_t size)
-{
-	if (memptr == NULL) {
-		return EINVAL;
-	}
-
-	*memptr = jkmalloc(NULL, NULL, 0, NULL, alignment, size, 0);
-	if (*memptr == NULL) {
-		return errno;
-	}
-
-	return 0;
-}
-

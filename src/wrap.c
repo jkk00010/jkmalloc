@@ -17,12 +17,18 @@ void *realloc(void *p, size_t n)
 
 void free(void *p)
 {
-	jkmalloc(NULL, NULL, 0, p, 0, 0, 0);
+	(void)jkmalloc(NULL, NULL, 0, p, 0, 0, 0);
 }
 
 int posix_memalign(void **memptr, size_t alignment, size_t size)
 {
-	return jk_memalign(memptr, alignment, size);
+	if (memptr == NULL) {
+		return EINVAL;
+	}
+	if ((*memptr = jkmalloc(NULL, NULL, 0, NULL, alignment, size, 0)) == NULL) {
+		return errno;
+	}
+	return 0;
 }
 
 void *aligned_alloc(size_t alignment, size_t size)

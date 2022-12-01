@@ -1,8 +1,14 @@
 #ifndef JKMALLOC_H
 #define JKMALLOC_H
 
-#include <stddef.h>		/* for the definition of size_t */
+#include <errno.h>		/* for the definition of errno */
+#include <stddef.h>		/* for the definition of size_t and NULL */
 #include <stdint.h>		/* for the definition of uintmax_t */
+#include <stdlib.h>		/* to ensure it has been included */
+
+#if defined jk_size || defined jk_align || defined jk_nelem || defined jk_elsize || defined jk_ptr
+# error jkmalloc.h conflicts with macros beginning with jk_
+#endif
 
 /* general entry point for jkmalloc functionality */
 /* this function should not be called directly */
@@ -14,8 +20,7 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *oldptr,
 #define jk_calloc(jk_nelem, jk_elsize)		jkmalloc(__FILE__, __func__, __LINE__, NULL, 1, (jk_nelem), (jk_elsize))
 #define jk_realloc(jk_ptr, jk_size)		jkmalloc(__FILE__, __func__, __LINE__, (jk_ptr), 1, (jk_size), 0)
 #define jk_free(jk_ptr)				(void)jkmalloc(__FILE__, __func__, __LINE__, (jk_ptr), 0, 0, 0)
-
-int jk_memalign(void **, size_t, size_t);
+#define jk_memalign(jk_ptr, jk_align, jk_size)	((jk_ptr) == NULL ? EINVAL : (*(jk_ptr) = jkmalloc(__FILE__, __func__, __LINE__, NULL, (jk_align), (jk_size), 0)) != NULL ? 0 : errno)
 
 #ifdef JK_OVERRIDE_STDLIB
 # undef malloc
@@ -31,7 +36,7 @@ int jk_memalign(void **, size_t, size_t);
 # define free(jk_ptr)			(void)jkmalloc(__FILE__, __func__, __LINE__, (jk_ptr), 0, 0, 0)
 
 # undef posix_memalign
-# define posix_memalign(jk_p, jk_a, jk_s)	jk_memalign(jk_p, jk_a, jk_s)
+# define posix_memalign(jk_p, jk_a, jk_s)	((jk_ptr) == NULL ? EINVAL : (*(jk_ptr) = jkmalloc(__FILE__, __func__, __LINE__, NULL, (jk_align), (jk_size), 0)) != NULL ? 0 : errno)
 
 # undef aligned_alloc
 # define aligned_alloc(jk_align, jk_size)	jkmalloc(__FILE__, __func__, __LINE__, NULL, (jk_align), (jk_size), 0)
