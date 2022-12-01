@@ -25,9 +25,10 @@ int main(int argc, char *argv[])
 	int useafterfree = 0;
 	size_t size = sizeof(string);
 	uintmax_t randomalloc = 0;
+	uintmax_t sequential = 0;
 
 	int c;
-	while ((c = getopt(argc, argv, "o:u:dfrnazR:")) != -1) {
+	while ((c = getopt(argc, argv, "o:u:dfrnazR:S:")) != -1) {
 		switch (c) {
 		case 'o':
 			over = strtoumax(optarg, NULL, 0);
@@ -65,6 +66,10 @@ int main(int argc, char *argv[])
 			randomalloc = strtoumax(optarg, NULL, 0);
 			break;
 
+		case 'S':
+			sequential = strtoumax(optarg, NULL, 0);
+			break;
+
 		default:
 			fprintf(stderr, "usage: %s [-o over] [-u under] [-dfrnaz]\n", argv[0]);
 			return 1;
@@ -76,6 +81,17 @@ int main(int argc, char *argv[])
 			void *ptr = malloc(1);
 			printf("%p\n", ptr);
 			free(ptr);
+		}
+	}
+
+	if (sequential) {
+		void *a[sequential];
+		for (uintmax_t i = 0; i < sequential; i++) {
+			a[i] = malloc(1);
+			printf("%p\n", a[i]);
+		}
+		for (uintmax_t i = 0; i < sequential; i++) {
+			free(a[i]);
 		}
 	}
 
