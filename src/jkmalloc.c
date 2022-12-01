@@ -157,6 +157,8 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 			return NULL;
 		}
 
+		/* TODO: Add source line information to the following errors */
+
 		struct jk_bucket *b = jk_bucketof(ptr);
 		if (mprotect(b, PAGESIZE, PROT_READ | PROT_WRITE) != 0) {
 			jk_error("Attempt to free() non-dynamic address", ptr);
@@ -205,6 +207,9 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 
 	/* realloc() */
 	if (ptr) {
+
+		/* TODO: Add source line information to the following errors */
+
 		struct jk_bucket *b = jk_bucketof(ptr);
 		if (mprotect(b, PAGESIZE, PROT_READ | PROT_WRITE) != 0) {
 			jk_error("Attempt to realloc() non-dynamic address", ptr);
