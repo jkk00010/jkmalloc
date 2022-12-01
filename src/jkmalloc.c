@@ -184,7 +184,7 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 		if (file) {
 			size_t len = strlen(b->trace);
 			snprintf(b->trace + len, jk_pagesize - sizeof(*b) - len,
-				"%sFreed by %s() (%s:%ju)", len ? "\n" : "", func, file, line);
+				"%s--- %s() (%s:%ju)", len ? "\n" : "", func, file, line);
 		}
 
 		for (size_t i = 0; i < b->pages; i++) {
@@ -276,7 +276,7 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 	ptr = (void*)under->start;
 
 	if (file) {
-		snprintf(under->trace, jk_pagesize - sizeof(*under), "Allocated by %s() (%s:%ju)", func, file, line);
+		snprintf(under->trace, jk_pagesize - sizeof(*under), "+++ %s() (%s:%ju)", func, file, line);
 		strcpy(over->trace, under->trace);
 	}
 
