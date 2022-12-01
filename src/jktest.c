@@ -7,6 +7,11 @@
 
 #include "jkmalloc.h"
 
+#if defined __GNUC__ && !defined __clang__
+#pragma GCC diagnostic ignored "-Wuse-after-free"
+#pragma GCC diagnostic ignored "-Wfree-nonheap-object"
+#endif
+
 int main(int argc, char *argv[])
 {
 	char string[] = "test string";
@@ -88,7 +93,8 @@ int main(int argc, char *argv[])
 	}
 
 	if (invalidfree) {
-		free(string);
+		ptr = string;
+		free(ptr);
 	}
 
 	if (invalidrealloc) {
@@ -96,6 +102,8 @@ int main(int argc, char *argv[])
 	}
 
 	if (null) {
-		*ptr = *((char*)NULL);
+		ptr = NULL;
+		strcpy(ptr, string);
+		puts(ptr);
 	}
 }
