@@ -19,10 +19,6 @@
 #endif
 #endif
 
-#ifndef PAGESIZE
-#define PAGESIZE	jk_pagesize
-#endif
-
 #define PTR_BITS	(CHAR_BIT * sizeof(uintptr_t))
 
 #define JKMALLOC_EXIT_VALUE	(127 + SIGSEGV)
@@ -33,9 +29,9 @@
 #define JK_UNDER_MAGIC		(0xcb2873ac)
 #define JK_OVER_MAGIC		(0x18a12c17)
 
-#define jk_pages(bytes)		(((bytes + PAGESIZE - 1) / PAGESIZE) + 2)
-#define jk_pageof(addr)		((void*)((uintptr_t)addr - ((uintptr_t)addr % PAGESIZE)))
-#define jk_bucketof(addr)	((void*)((uintptr_t)jk_pageof(addr) - PAGESIZE))
+#define jk_pages(bytes)		(((bytes + jk_pagesize - 1) / jk_pagesize) + 2)
+#define jk_pageof(addr)		((void*)((uintptr_t)addr - ((uintptr_t)addr % jk_pagesize)))
+#define jk_bucketof(addr)	((void*)((uintptr_t)jk_pageof(addr) - jk_pagesize))
 
 struct jk_bucket {
 	uint32_t magic;
@@ -82,7 +78,7 @@ static void *jk_page_alloc(size_t npages)
 	fd = open("/dev/zero", O_RDONLY);
 	#endif
 
-	void *pages = mmap(NULL, npages * PAGESIZE, prot, flags, fd, 0);
+	void *pages = mmap(NULL, npages * jk_pagesize, prot, flags, fd, 0);
 
 	#ifndef MAP_ANONYMOUS
 	if (fd != -1) {
@@ -102,7 +98,7 @@ static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 	}
 
 	struct jk_bucket *bucket = jk_pageof(si->si_addr);
-	if (mprotect(bucket, PAGESIZE, PROT_READ) != 0) {
+	if (mprotect(bucket, jk_pagesize, PROT_READ) != 0) {
 		psiginfo(si, NULL);
 		jk_error(NULL, NULL);
 	}
@@ -165,7 +161,7 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 		/* TODO: Add source line information to the following errors */
 
 		struct jk_bucket *b = jk_bucketof(ptr);
-		if (mprotect(b, PAGESIZE, PROT_READ | PROT_WRITE) != 0) {
+		if (mprotect(b, jk_pagesize, PROT_READ | PROT_WRITE) != 0) {
 			jk_error("Attempt to free() non-dynamic address", ptr);
 		}
 
@@ -183,16 +179,16 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 		}
 
 		char *base = (char*)b;
-		mprotect(base, PAGESIZE * b->pages, PROT_READ | PROT_WRITE);
+		mprotect(base, jk_pagesize * b->pages, PROT_READ | PROT_WRITE);
 
 		if (file) {
 			size_t len = strlen(b->trace);
-			snprintf(b->trace + len, PAGESIZE - sizeof(*b) - len,
+			snprintf(b->trace + len, jk_pagesize - sizeof(*b) - len,
 				"%sFreed by %s() (%s:%ju)", len ? "\n" : "", func, file, line);
 		}
 
 		for (size_t i = 0; i < b->pages; i++) {
-			struct jk_bucket *p = (void*)(base + i * PAGESIZE);
+			struct jk_bucket *p = (void*)(base + i * jk_pagesize);
 			p->magic = JK_FREE_MAGIC;
 			p->start = b->start;
 			p->size = b->size;
@@ -201,12 +197,12 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 
 		size_t fb = jk_free_buckets % JK_FREE_LIST_SIZE;
 		if (jk_free_buckets > JK_FREE_LIST_SIZE) {
-			mprotect(jk_free_list[fb], PAGESIZE, PROT_READ);
-			munmap(jk_free_list[fb], PAGESIZE * jk_free_list[fb]->pages);
+			mprotect(jk_free_list[fb], jk_pagesize, PROT_READ);
+			munmap(jk_free_list[fb], jk_pagesize * jk_free_list[fb]->pages);
 		}
 		jk_free_list[fb] = b;
 		jk_free_buckets++;
-		mprotect(b, PAGESIZE * b->pages, PROT_NONE);
+		mprotect(b, jk_pagesize * b->pages, PROT_NONE);
 		return NULL;
 	}
 
@@ -216,7 +212,7 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 		/* TODO: Add source line information to the following errors */
 
 		struct jk_bucket *b = jk_bucketof(ptr);
-		if (mprotect(b, PAGESIZE, PROT_READ | PROT_WRITE) != 0) {
+		if (mprotect(b, jk_pagesize, PROT_READ | PROT_WRITE) != 0) {
 			jk_error("Attempt to realloc() non-dynamic address", ptr);
 		}
 
@@ -264,15 +260,15 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 	under->size = size;
 	under->align = alignment;
 	under->pages = pages;
-	under->start = (uintptr_t)under + PAGESIZE;
-	if (size % PAGESIZE != 0) {
-		under->start += PAGESIZE - size % PAGESIZE;
+	under->start = (uintptr_t)under + jk_pagesize;
+	if (size % jk_pagesize != 0) {
+		under->start += jk_pagesize - size % jk_pagesize;
 		if (under->start % under->align != 0) {
 			under->start -= under->start % under->align;
 		}
 	}
 
-	struct jk_bucket *over = (void*)((char*)under + PAGESIZE * (pages - 1));
+	struct jk_bucket *over = (void*)((char*)under + jk_pagesize * (pages - 1));
 	over->magic = JK_OVER_MAGIC;
 	over->start = under->start;
 	over->size = under->size;
@@ -280,7 +276,7 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 	ptr = (void*)under->start;
 
 	if (file) {
-		snprintf(under->trace, PAGESIZE - sizeof(*under), "Allocated by %s() (%s:%ju)", func, file, line);
+		snprintf(under->trace, jk_pagesize - sizeof(*under), "Allocated by %s() (%s:%ju)", func, file, line);
 		strcpy(over->trace, under->trace);
 	}
 
@@ -289,7 +285,7 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 		memset(ptr, '\0', size);
 	}
 
-	mprotect(under, PAGESIZE, PROT_NONE);
-	mprotect(over, PAGESIZE, PROT_NONE);
+	mprotect(under, jk_pagesize, PROT_NONE);
+	mprotect(over, jk_pagesize, PROT_NONE);
 	return ptr;
 }
