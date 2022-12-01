@@ -1,5 +1,5 @@
 #define _DEFAULT_SOURCE "give me anonymous, gnu"
-#define _POSIX_C_SOURCE 200809L
+#define _XOPEN_SOURCE 700
 #include <errno.h>
 #include <fcntl.h>
 #include <limits.h>
@@ -12,8 +12,11 @@
 
 #include "jkmalloc.h"
 
-#ifdef __OpenBSD__
-#define psiginfo(x, y)	fprintf(stderr, "%s\n", y)
+#if defined__OpenBSD__ || defined __FreeBSD__
+#define psiginfo(x, y)	(y ? fprintf(stderr, "%s\n", y) : 0)
+#ifndef SA_SIGINFO
+#define SA_SIGINFO	(0)
+#endif
 #endif
 
 #ifndef PAGESIZE
