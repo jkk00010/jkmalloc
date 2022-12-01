@@ -12,6 +12,10 @@
 
 #include "jkmalloc.h"
 
+#ifdef __OpenBSD__
+#define psiginfo(x, y)	fprintf(stderr, "%s\n", y)
+#endif
+
 #ifndef PAGESIZE
 #define PAGESIZE	(4096)
 #endif

@@ -7,6 +7,7 @@ SRCDIR=src
 INCDIR=include
 CC=c99
 CFLAGS=-I$(INCDIR) -Wall -Wextra -Wpedantic -g -fPIC
+ARFLAGS=-r
 
 OBJECTS=$(OBJDIR)/jkmalloc.o
 WRAPOBJECTS=$(OBJECTS) $(OBJDIR)/wrap.o
@@ -44,4 +45,4 @@ $(BINDIR)/jktest-static: $(SRCDIR)/jktest.c $(LIBDIR)/libjkmalloc.a
 	$(CC) -o $@ $(CFLAGS) -DJK_OVERRIDE_STDLIB $(SRCDIR)/jktest.c $(LIBDIR)/libjkmalloc.a
 
 clean:
-	$(RM) -rf $(LIBDIR) $(OBJDIR) $(BINDIR)
+	rm -rf $(LIBDIR) $(OBJDIR) $(BINDIR)
