@@ -24,9 +24,10 @@ int main(int argc, char *argv[])
 	int null = 0;
 	int useafterfree = 0;
 	size_t size = sizeof(string);
+	uintmax_t randomalloc = 0;
 
 	int c;
-	while ((c = getopt(argc, argv, "o:u:dfrnaz")) != -1) {
+	while ((c = getopt(argc, argv, "o:u:dfrnazR:")) != -1) {
 		switch (c) {
 		case 'o':
 			over = strtoumax(optarg, NULL, 0);
@@ -60,9 +61,21 @@ int main(int argc, char *argv[])
 			size = 0;
 			break;
 
+		case 'R':
+			randomalloc = strtoumax(optarg, NULL, 0);
+			break;
+
 		default:
 			fprintf(stderr, "usage: %s [-o over] [-u under] [-dfrnaz]\n", argv[0]);
 			return 1;
+		}
+	}
+
+	if (randomalloc) {
+		for (uintmax_t i = 0; i < randomalloc; i++) {
+			void *ptr = malloc(1);
+			printf("%p\n", ptr);
+			free(ptr);
 		}
 	}
 
