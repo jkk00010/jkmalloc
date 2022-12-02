@@ -39,6 +39,7 @@ struct jk_bucket {
 	size_t size;
 	size_t align;
 	size_t pages;
+	size_t tlen;
 	char trace[];
 };
 
@@ -70,10 +71,6 @@ static void jk_copy(void *dst, void *src, size_t len, int fromtop)
 
 static void jk_error(const char *s, void *addr, struct jk_source *src)
 {
-	if (src && src->file) {
-		fprintf(stderr, "!!! %s (%s:%ju)\n", src->func, src->file, src->line);
-	}
-
 	if (s && *s) {
 		write(STDERR_FILENO, s, strlen(s));
 		if (addr != NULL) {
@@ -91,9 +88,14 @@ static void jk_error(const char *s, void *addr, struct jk_source *src)
 	}
 
 	if (src && src->bucket && src->bucket->trace[0] != '\0') {
-		write(STDERR_FILENO, src->bucket->trace, strlen(src->bucket->trace));
+		write(STDERR_FILENO, src->bucket->trace, src->bucket->tlen);
 		write(STDERR_FILENO, "\n", 1);
 	}
+
+	if (src && src->file) {
+		fprintf(stderr, "!!! %s() (%s:%ju)\n", src->func, src->file, src->line);
+	}
+
 	_exit(JKMALLOC_EXIT_VALUE);
 }
 
@@ -148,7 +150,7 @@ static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 			psiginfo(si, "Attempt to use 0-byte allocation");
 		} else {
 			psiginfo(si, "Heap overflow detected");
-			fprintf(stderr, "Allocation of size %zu at %p, overflow at %p (offset %zd)\n", bucket->size, (void*)bucket->start, si->si_addr, (size_t)((char*)si->si_addr - (char*)bucket->start));
+			fprintf(stderr, "Allocation of size %zu at %p, overflow at %p (offset %zu)\n", bucket->size, (void*)bucket->start, si->si_addr, (size_t)((char*)si->si_addr - (char*)bucket->start));
 		}
 		break;
 
@@ -218,8 +220,8 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 		mprotect(base, jk_pagesize * b->pages, PROT_READ | PROT_WRITE);
 
 		if (file) {
-			size_t len = strlen(b->trace);
-			snprintf(b->trace + len, jk_pagesize - sizeof(*b) - len,
+			size_t len = b->tlen;
+			b->tlen += snprintf(b->trace + len, jk_pagesize - sizeof(*b) - len,
 				"%s--- %s() (%s:%ju)", len ? "\n" : "", func, file, line);
 		}
 
@@ -312,9 +314,11 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 	ptr = (void*)under->start;
 
 	if (file) {
-		int tlen = snprintf(under->trace, jk_pagesize - sizeof(*under), "+++ %s() (%s:%ju)", func, file, line);
-		jk_copy(over->trace, under->trace, tlen + 1, 0);
+		under->tlen = snprintf(under->trace, jk_pagesize - sizeof(*under), "+++ %s() (%s:%ju)", func, file, line);
+		jk_copy(over->trace, under->trace, under->tlen + 1, 0);
+		over->tlen = under->tlen;
 	} else {
+		under->trace[0] = '\0';
 		over->trace[0] = '\0';
 	}
 
