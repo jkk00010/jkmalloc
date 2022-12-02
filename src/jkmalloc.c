@@ -148,7 +148,7 @@ static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 			psiginfo(si, "Attempt to use 0-byte allocation");
 		} else {
 			psiginfo(si, "Heap overflow detected");
-			fprintf(stderr, "Allocation of size %zu at %p, overflow at offset %zd\n", bucket->size, (void*)bucket->start, (size_t)((char*)si->si_addr - (char*)bucket->start));
+			fprintf(stderr, "Allocation of size %zu at %p, overflow at %p (offset %zd)\n", bucket->size, (void*)bucket->start, si->si_addr, (size_t)((char*)si->si_addr - (char*)bucket->start));
 		}
 		break;
 
