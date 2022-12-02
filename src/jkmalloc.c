@@ -312,15 +312,18 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 	ptr = (void*)under->start;
 
 	if (file) {
-		snprintf(under->trace, jk_pagesize - sizeof(*under), "+++ %s() (%s:%ju)", func, file, line);
-		strcpy(over->trace, under->trace);
+		int tlen = snprintf(under->trace, jk_pagesize - sizeof(*under), "+++ %s() (%s:%ju)", func, file, line);
+		jk_copy(over->trace, under->trace, tlen + 1, 0);
 	} else {
 		over->trace[0] = '\0';
 	}
 
 	/* calloc() */
 	if (size2) {
-		memset(ptr, '\0', size);
+		char *p = ptr;
+		for (size_t i = 0; i < size; i++) {
+			p[i] = '\0';
+		}
 	}
 
 	mprotect(under, jk_pagesize, PROT_NONE);
