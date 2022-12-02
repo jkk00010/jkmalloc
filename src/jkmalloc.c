@@ -53,6 +53,21 @@ static struct jk_bucket *jk_free_list[JK_FREE_LIST_SIZE];
 static size_t jk_free_buckets = 0;
 static size_t jk_pagesize = 0;
 
+static void jk_copy(void *dst, void *src, size_t len, int fromtop)
+{
+	char *d = dst;
+	char *s = src;
+	if (fromtop) {
+		for (size_t i = 1; i <= len; i++) {
+			d[len - i] = s[len - i];
+		}
+	} else {
+		for (size_t i = 0; i < len; i++) {
+			d[i] = s[i];
+		}
+	}
+}
+
 static void jk_error(const char *s, void *addr, struct jk_source *src)
 {
 	if (src && src->file) {
@@ -133,6 +148,7 @@ static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 			psiginfo(si, "Attempt to use 0-byte allocation");
 		} else {
 			psiginfo(si, "Heap overflow detected");
+			fprintf(stderr, "Allocation of size %zu at %p, overflow at offset %zd\n", bucket->size, (void*)bucket->start, (size_t)((char*)si->si_addr - (char*)bucket->start));
 		}
 		break;
 
@@ -210,7 +226,7 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 		b->magic = JK_FREE_MAGIC;
 
 		for (size_t i = 1; i < b->pages; i++) {
-			memcpy(base + i * jk_pagesize, b, jk_pagesize);
+			jk_copy(base + i * jk_pagesize, b, jk_pagesize, 0);
 		}
 
 		size_t fb = jk_free_buckets % JK_FREE_LIST_SIZE;
@@ -250,7 +266,7 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 	
 		void *newptr = jkmalloc(NULL, NULL, 0, NULL, alignment, size1, size2);
 		if (newptr != NULL) {
-			memcpy(newptr, ptr, b->size);
+			jk_copy(newptr, ptr, b->size, 0);
 			jk_free(ptr);
 		}
 		return newptr;
