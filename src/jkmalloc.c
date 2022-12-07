@@ -151,6 +151,7 @@ static void jk_sigaction(int sig, siginfo_t *si, void *addr)
 		} else {
 			psiginfo(si, "Heap overflow detected");
 			fprintf(stderr, "Allocation of size %zu at %p, overflow at %p (offset %zu)\n", bucket->size, (void*)bucket->start, si->si_addr, (size_t)((char*)si->si_addr - (char*)bucket->start));
+			fprintf(stderr, "Buffer begins with %4s\n", (char*)bucket->start);
 		}
 		break;
 
@@ -333,4 +334,42 @@ void* jkmalloc(const char *file, const char *func, uintmax_t line, void *ptr, si
 	mprotect(under, jk_pagesize, PROT_NONE);
 	mprotect(over, jk_pagesize, PROT_NONE);
 	return ptr;
+}
+
+void *(jk_malloc)(size_t n)
+{
+	return jkmalloc(NULL, NULL, 0, NULL, 1, n, 0);
+}
+
+void *(jk_aligned_alloc)(size_t a, size_t n)
+{
+	return jkmalloc(NULL, NULL, 0, NULL, a, n, 0);
+}
+
+void *(jk_calloc)(size_t n, size_t s)
+{
+	return jkmalloc(NULL, NULL, 0, NULL, 1, n, s);
+}
+
+void *(jk_realloc)(void *ptr, size_t n)
+{
+	return jkmalloc(NULL, NULL, 0, ptr, 1, n, 0);
+}
+
+void (jk_free)(void *ptr)
+{
+	(void)jkmalloc(NULL, NULL, 0, ptr, 0, 0, 0);
+}
+
+int (jk_memalign)(void **ptr, size_t a, size_t n)
+{
+	if (ptr == NULL) {
+		return EINVAL;
+	}
+
+	if (((*ptr) = jkmalloc(NULL, NULL, 0, NULL, a, n, 0)) == NULL) {
+		return errno;
+	}
+
+	return 0;
 }
