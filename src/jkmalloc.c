@@ -12,7 +12,7 @@
 
 #include "jkmalloc.h"
 
-#if defined __OpenBSD__ || defined __FreeBSD__
+#if defined __OpenBSD__ || defined __FreeBSD__ || defined __APPLE__
 #define psiginfo(x, y)	((y) ? fprintf(stderr, "%s\n", (char*)(y)) : 0)
 #ifndef SA_SIGINFO
 #define SA_SIGINFO	(0)
