@@ -13,11 +13,16 @@ OBJECTS=$(OBJDIR)/jkmalloc.o
 WRAPOBJECTS=$(OBJECTS) $(OBJDIR)/wrap.o
 TESTS=$(BINDIR)/jktest-dynamic $(BINDIR)/jktest-static
 
-all: $(LIBDIR)/libjkmalloc.a $(LIBDIR)/libjkmalloc.so $(BINDIR)/jk $(TESTS)
+all: $(LIBDIR)/libjkmalloc.a $(LIBDIR)/libjkmalloc.so $(BINDIR)/jk $(BINDIR)/all $(TESTS)
 
 $(BINDIR)/jk: $(SRCDIR)/jk.sh
 	@mkdir -p $(@D)
 	cp -f $(SRCDIR)/jk.sh $@
+	chmod 755 $@
+
+$(BINDIR)/all: $(SRCDIR)/all.sh
+	@mkdir -p $(@D)
+	cp -f $(SRCDIR)/all.sh $@
 	chmod 755 $@
 
 $(OBJDIR)/jkmalloc.o: $(SRCDIR)/jkmalloc.c $(INCDIR)/jkmalloc.h
